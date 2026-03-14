@@ -260,10 +260,13 @@ class WeChatFormatter:
         p_style = "margin-top: 15px; margin-bottom: 15px; font-size: 16px; line-height: 1.8; color: #3f3f3f; text-align: justify; letter-spacing: 0.8px; word-break: break-all;"
         html_content = re.sub(r'<p>', f'<p style="{p_style}">', html_content)
         
-        # 2. 一级和二级标题 (添加醒目左边界带或渐变背景)
+        # 2. 一级标题 (居中/醒目风格)
+        h1_style = "font-size: 22px; color: #1a1a1a; text-align: center; font-weight: bold; margin-top: 50px; margin-bottom: 25px; line-height: 1.6; letter-spacing: 1px;"
+        html_content = re.sub(r'<h1>', f'<h1 style="{h1_style}">', html_content)
+        
+        # 2.5 二级标题 (左边界带风格)
         h2_style = "font-size: 20px; color: #1a1a1a; padding-bottom: 8px; border-bottom: 2px solid #e1e7f0; margin-top: 45px; margin-bottom: 20px; line-height: 1.6; font-weight: bold; border-left: 5px solid #2b5cff; padding-left: 12px; display: block;"
-        html_content = re.sub(r'<h[12]>', f'<h2 style="{h2_style}">', html_content)
-        html_content = re.sub(r'</h[12]>', '</h2>', html_content)
+        html_content = re.sub(r'<h2>', f'<h2 style="{h2_style}">', html_content)
         
         # 3. 三级标题
         h3_style = "font-size: 17px; color: #2c3e50; margin-top: 30px; margin-bottom: 15px; font-weight: bold; line-height: 1.6; padding-left: 8px; position: relative;"
