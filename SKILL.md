@@ -67,7 +67,9 @@ metadata: {"openclaw":{"emoji":"🚀","requires":{"python":">=3.9"}}}
 ## ⚙️ 环境变量要求
 
 执行此总控技能前，请确保配置文件 `.env` 已具备：
-- `FEISHU_*`: 飞书 API 权限（文档、表格）。
+- `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_APP_TOKEN`: 飞书 API 权限（文档、表格）。
+- `FEISHU_INSPIRATION_TABLE`: (可选) 定义“灵感库”的多维表格名称，默认为 "01_内容灵感库 (OpenClaw)"
+- `FEISHU_PIPELINE_TABLE`: (可选) 定义“发布队列”的多维表格名称，默认为 "02_自动化发布队列 (OpenClaw)"
 - `WECHAT_*`: 微信公众号后台权限。
 - `VOLCENGINE_*` / `KIMI_*`: LLM 与图像生成权限。
 
