@@ -41,7 +41,7 @@ class AutoPlatformManager:
         )
         # 获取核心表 ID
         tables = self.feishu.list_tables()
-        table = next((t for t in tables if "智能内容库" in t['name']), None)
+        table = next((t for t in tables if Config.FEISHU_PIPELINE_TABLE in t['name']), None)
         self.smart_table_id = table['table_id'] if table else None
         
         self._ensure_table_fields()

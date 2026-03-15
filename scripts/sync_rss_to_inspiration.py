@@ -1,8 +1,15 @@
 import os
+import sys
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from dotenv import load_dotenv
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from config import Config
 from modules.feishu import FeishuBitable
 
 # 加载配置
@@ -22,12 +29,13 @@ ITEMS_PER_FEED_LIMIT = 5
 
 class RSSInspirationSync:
     def __init__(self):
-        app_id = os.getenv("FEISHU_APP_ID")
-        app_secret = os.getenv("FEISHU_APP_SECRET")
-        app_token = os.getenv("FEISHU_APP_TOKEN")
-        self.feishu = FeishuBitable(app_id, app_secret, app_token)
-        self.table_name = "内容灵感库"
-        self.table_id = self.feishu.get_table_id_by_name(self.table_name)
+        self.feishu = FeishuBitable(
+            Config.FEISHU_APP_ID, 
+            Config.FEISHU_APP_SECRET, 
+            Config.FEISHU_APP_TOKEN
+        )
+        self.table_name = Config.FEISHU_INSPIRATION_TABLE
+        self.table_id = self.feishu.get_table_id_by_name(self.table_name) or self.feishu.get_table_id_by_name("内容灵感库")
 
     def get_existing_urls(self):
         """获取灵感库中已有的链接，防止重复同步"""

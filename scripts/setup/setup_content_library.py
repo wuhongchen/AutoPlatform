@@ -1,33 +1,41 @@
 import os
+import sys
 import requests
 import json
 from dotenv import load_dotenv
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from config import Config
 from modules.feishu import FeishuBitable
 
 load_dotenv()
 
 def setup():
-    app_id = os.getenv("FEISHU_APP_ID")
-    app_secret = os.getenv("FEISHU_APP_SECRET")
-    app_token = os.getenv("FEISHU_APP_TOKEN")
+    app_id = Config.FEISHU_APP_ID
+    app_secret = Config.FEISHU_APP_SECRET
+    app_token = Config.FEISHU_APP_TOKEN
     
     feishu = FeishuBitable(app_id, app_secret, app_token)
     if not feishu._get_token():
         return
     
-    # 1. 创建新表: 小龙虾智能内容库
+    target_table = Config.FEISHU_PIPELINE_TABLE
+    # 1. 创建新表
     url = f"{feishu.base_url}/bitable/v1/apps/{feishu.app_token}/tables"
     headers = {
         "Authorization": f"Bearer {feishu.token}",
         "Content-Type": "application/json; charset=utf-8"
     }
-    payload = {"table": {"name": "小龙虾智能内容库"}}
+    payload = {"table": {"name": target_table}}
     
     resp = requests.post(url, headers=headers, json=payload).json()
     if resp.get("code") in [1254302, 1254013]: # 已存在
-        print("💡 表格 [小龙虾智能内容库] 已存在，正在查找其 ID...")
+        print(f"💡 表格 [{target_table}] 已存在，正在查找其 ID...")
         tables = feishu.list_tables()
-        table_id = next((t['table_id'] for t in tables if t['name'] == "小龙虾智能内容库"), None)
+        table_id = next((t['table_id'] for t in tables if t['name'] == target_table), None)
     elif resp.get("code") == 0:
         table_id = resp["data"]["table_id"]
         print(f"✅ 成功创建新表: {table_id}")

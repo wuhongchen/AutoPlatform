@@ -24,6 +24,9 @@ class Config:
     FEISHU_APP_ID = os.getenv("FEISHU_APP_ID")
     FEISHU_APP_SECRET = os.getenv("FEISHU_APP_SECRET")
     FEISHU_APP_TOKEN = os.getenv("FEISHU_APP_TOKEN")
+    FEISHU_INSPIRATION_TABLE = os.getenv("FEISHU_INSPIRATION_TABLE", "01_内容灵感库 (OpenClaw)")
+    FEISHU_PIPELINE_TABLE = os.getenv("FEISHU_PIPELINE_TABLE", "02_自动化发布队列 (OpenClaw)")
+    FEISHU_PUBLISH_LOG_TABLE = os.getenv("FEISHU_PUBLISH_LOG_TABLE", "发布记录")
     
     # 其他配置
     DEFAULT_COVER_URL = os.getenv("DEFAULT_COVER_URL")

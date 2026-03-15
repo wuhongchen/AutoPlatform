@@ -8,12 +8,11 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 from dotenv import load_dotenv
+from config import Config
 from modules.feishu import FeishuBitable
 from modules.inspiration.collector import InspirationCollector
 from modules.inspiration.analyzer import InspirationAnalyzer
 from modules.inspiration.sync_engine import InspirationSyncEngine
-
-load_dotenv()
 
 class InspirationManager:
     """
@@ -21,15 +20,15 @@ class InspirationManager:
     """
     def __init__(self):
         # 初始化飞书客户端
-        app_id = os.getenv("FEISHU_APP_ID")
-        app_secret = os.getenv("FEISHU_APP_SECRET")
-        app_token = os.getenv("FEISHU_APP_TOKEN")
-        self.feishu = FeishuBitable(app_id, app_secret, app_token)
+        self.feishu = FeishuBitable(
+            Config.FEISHU_APP_ID, 
+            Config.FEISHU_APP_SECRET, 
+            Config.FEISHU_APP_TOKEN
+        )
         
         # 获取表格 ID
-        # 优化点：使用更具有标识性的名称，建议手动同步修改飞书上的表名
-        self.inspiration_table_id = self.feishu.get_table_id_by_name("01_内容灵感库 (OpenClaw)") or self.feishu.get_table_id_by_name("内容灵感库")
-        self.pipeline_table_id = self.feishu.get_table_id_by_name("02_自动化发布队列 (OpenClaw)") or self.feishu.get_table_id_by_name("小龙虾智能内容库")
+        self.inspiration_table_id = self.feishu.get_table_id_by_name(Config.FEISHU_INSPIRATION_TABLE) or self.feishu.get_table_id_by_name("内容灵感库")
+        self.pipeline_table_id = self.feishu.get_table_id_by_name(Config.FEISHU_PIPELINE_TABLE) or self.feishu.get_table_id_by_name("小龙虾智能内容库")
         
         # 初始化组件
         self.collector = InspirationCollector()
