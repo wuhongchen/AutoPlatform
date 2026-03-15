@@ -215,16 +215,24 @@ class AutoPlatformManager:
 
     def run_pipeline_step_2(self, record_id, fields):
         """环节 2: 确认发布"""
-        rewritten_doc_link = fields.get("改后文档链接")
-        if isinstance(rewritten_doc_link, dict): rewritten_doc_link = rewritten_doc_link.get('url', '')
-        elif isinstance(rewritten_doc_link, list) and len(rewritten_doc_link) > 0: rewritten_doc_link = rewritten_doc_link[0].get('url', '') or rewritten_doc_link[0].get('text', '')
-        
-        if not rewritten_doc_link: return
-
-        match = re.search(r'([a-zA-Z0-9]{27,})', str(rewritten_doc_link))
-        doc_token = match.group(1) if match else str(rewritten_doc_link).split('/')[-1].split('?')[0]
-        
-        if len(doc_token) < 27: return
+        # 从改后文档链接或备注中提取 27 位文档 Token
+        doc_token = None
+        for field_val in [fields.get("改后文档链接"), fields.get("备注")]:
+            if not field_val: continue
+            
+            val_str = ""
+            if isinstance(field_val, dict): val_str = field_val.get('url', '') or field_val.get('text', '')
+            elif isinstance(field_val, list) and len(field_val) > 0: val_str = field_val[0].get('url', '') or field_val[0].get('text', '')
+            else: val_str = str(field_val)
+            
+            match = re.search(r'([a-zA-Z0-9]{27,})', val_str)
+            if match:
+                doc_token = match.group(1)
+                break
+                
+        if not doc_token or len(doc_token) < 27:
+            print("❌ 无法从数据记录中解析有效的 Feishu Document Token。")
+            return
 
         final_article = self.feishu.get_docx_content(doc_token)
         if not final_article: raise Exception("读取确认稿失败")
