@@ -95,7 +95,8 @@ metadata: {"openclaw":{"emoji":"🚀","requires":{"python":">=3.9"}}}
 ### Action 3: 启动主控流水线 (Pipeline Engine)
 - **触发意图**: "处理一下刚才准备好的发文"、"启动自动化发布"、"监控已同步的文章"
 - **执行命令**:
-  - 后台守护: `python3 core/manager.py pipeline` (这是平台的心脏组件，长时运行)
+  - 守护运行 (长时占用): `python3 core/manager.py pipeline` (后台守护，长驻内存)
+  - 定时触发 (Cron 推荐): `python3 core/manager.py pipeline-once` (单次巡检执行后退出，由 OpenClaw 定时调度时不占后台常驻进程)
   
 ### Action 4: 单发测试/紧急响应 (Ad-hoc)
 - **触发意图**: "直接帮我把这篇文章改写发到公众号：https://xxx.xxx"
