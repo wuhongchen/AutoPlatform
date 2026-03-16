@@ -289,55 +289,56 @@ class AutoPlatformManager:
         else:
             print("❌ 微信发布流程中断。")
 
+    def run_pipeline_once(self):
+        """执行单次全流水线巡检"""
+        tables = self.feishu.list_tables()
+        inbox_table = next((t for t in tables if "智能内容库" in t['name']), None)
+        if not inbox_table: return
+        records_data = self.feishu.list_records(inbox_table['table_id'])
+        for record in records_data.get('items', []):
+            fields = record.get('fields', {})
+            status = str(fields.get('数据流程状态', ''))
+            record_id = record.get('record_id')
+            if record_id in self.processing_records: continue
+            fields['_table_id'] = inbox_table['table_id']
+
+            if status == "✅ 采集完成" or status == "处理中":
+                print(f"🚀 开始改写: {fields.get('标题')}")
+                try:
+                    self.feishu.update_record(fields['_table_id'], record_id, {"数据流程状态": "处理中"})
+                    self.processing_records.add(record_id)
+                    self.run_pipeline_step_1(record_id, fields)
+                except Exception as e:
+                    print(f"❌ 改写步骤异常: {e}")
+                    self.feishu.update_record(fields['_table_id'], record_id, {
+                        "数据流程状态": "❌ 改写失败",
+                        "备注": f"AI 改写或排版失败，原因: {str(e)}"
+                    })
+                finally:
+                    if record_id in self.processing_records:
+                        self.processing_records.remove(record_id)
+
+            elif status == "🚀 确认发布" or status == "发布中":
+                print(f"📤 开始发布: {fields.get('标题')}")
+                try:
+                    self.feishu.update_record(fields['_table_id'], record_id, {"数据流程状态": "发布中"})
+                    self.processing_records.add(record_id)
+                    self.run_pipeline_step_2(record_id, fields)
+                except Exception as e:
+                    print(f"❌ 发布步骤异常: {e}")
+                    self.feishu.update_record(fields['_table_id'], record_id, {
+                        "数据流程状态": "❌ 发布失败",
+                        "备注": f"推送到微信失败，原因: {str(e)}"
+                    })
+                finally:
+                    if record_id in self.processing_records:
+                        self.processing_records.remove(record_id)
+
     def start_pipeline_loop(self, interval=30):
         print(f"🕵️ [流水线] 监听中...")
         while True:
             try:
-                tables = self.feishu.list_tables()
-                inbox_table = next((t for t in tables if "智能内容库" in t['name']), None)
-                if not inbox_table: 
-                    time.sleep(interval)
-                    continue
-                records_data = self.feishu.list_records(inbox_table['table_id'])
-                for record in records_data.get('items', []):
-                    fields = record.get('fields', {})
-                    status = str(fields.get('数据流程状态', ''))
-                    record_id = record.get('record_id')
-                    if record_id in self.processing_records: continue
-                    fields['_table_id'] = inbox_table['table_id']
-
-                    if status == "✅ 采集完成" or status == "处理中":
-                        print(f"🚀 开始改写: {fields.get('标题')}")
-                        try:
-                            self.feishu.update_record(fields['_table_id'], record_id, {"数据流程状态": "处理中"})
-                            self.processing_records.add(record_id)
-                            self.run_pipeline_step_1(record_id, fields)
-                        except Exception as e:
-                            print(f"❌ 改写步骤异常: {e}")
-                            self.feishu.update_record(fields['_table_id'], record_id, {
-                                "数据流程状态": "❌ 改写失败",
-                                "备注": f"AI 改写或排版失败，原因: {str(e)}"
-                            })
-                        finally:
-                            if record_id in self.processing_records:
-                                self.processing_records.remove(record_id)
-
-                    elif status == "🚀 确认发布" or status == "发布中":
-                        print(f"📤 开始发布: {fields.get('标题')}")
-                        try:
-                            self.feishu.update_record(fields['_table_id'], record_id, {"数据流程状态": "发布中"})
-                            self.processing_records.add(record_id)
-                            self.run_pipeline_step_2(record_id, fields)
-                        except Exception as e:
-                            print(f"❌ 发布步骤异常: {e}")
-                            self.feishu.update_record(fields['_table_id'], record_id, {
-                                "数据流程状态": "❌ 发布失败",
-                                "备注": f"推送到微信失败，原因: {str(e)}"
-                            })
-                        finally:
-                            if record_id in self.processing_records:
-                                self.processing_records.remove(record_id)
-
+                self.run_pipeline_once()
             except Exception as e: print(f"❌ 循环异常: {e}")
             time.sleep(interval)
 
@@ -345,4 +346,5 @@ if __name__ == "__main__":
     manager = AutoPlatformManager()
     if len(sys.argv) < 2: sys.exit(1)
     if sys.argv[1] == "pipeline": manager.start_pipeline_loop()
+    elif sys.argv[1] == "pipeline-once": manager.run_pipeline_once()
     else: manager.run_with_params(sys.argv[1], "tech_expert", "volcengine")
