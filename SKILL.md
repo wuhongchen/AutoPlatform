@@ -1,113 +1,154 @@
 ---
 name: autoinfo-manager
-description: OpenClaw 自动化运营平台总控中心。负责从选题分析、内容改写、AI 生图到微信发布的全链路调度。
+description: OpenClaw 自动化运营总控技能。用于灵感扫描、流水线改写发布、单篇紧急处理；优先使用 pipeline-once 提高调度稳定性与效率。
 metadata: {"openclaw":{"emoji":"🚀","requires":{"python":">=3.9"}}}
 ---
 
-# autoinfo-manager (总控技能)
+# autoinfo-manager
 
-## 🎯 业务目标
+## 1) 技能用途
+本技能用于驱动本仓库的三类任务：
+1. 灵感库扫描与评估
+2. 内容流水线改写与发布
+3. 单篇文章即时处理
 
-作为 OpenClaw 系统的顶层调度器，它将多个原子技能串联起来，实现真正的“无人值守”自媒体运营方案。
+当用户出现以下意图时应触发本技能：
+1. “启动灵感扫描 / 分析选题 / 看看最近有什么可写”
+2. “跑流水线 / 自动发布 / 处理待发布队列”
+3. “把这篇文章改写并发布：<URL>”
+4. “修复改写失败/发布失败记录”
 
-## 📊 管理后台
-- **飞书总控台**: [点击访问 OpenClaw 内容工厂](https://t0woxppdywz.feishu.cn/base/KkDFb19FNazzaNs7tNRcdyZNnWb)
-- **核心表格**: 
-  - `01_内容灵感库`: 用于选题筛选与 AI 打分。
-  - `02_自动化发布队列`: 用于内容改写审核与微信推送。
+## 2) OpenClaw 调用总原则
+1. 默认优先单次巡检：`pipeline-once`，不要默认起常驻进程。
+2. 默认非交互调用：设置 `OPENCLAW_NON_INTERACTIVE=1`。
+3. 默认关闭重复依赖安装：设置 `OPENCLAW_AUTO_INSTALL=0`（环境已就绪时）。
+4. 大队列分批跑：设置 `OPENCLAW_PIPELINE_BATCH_SIZE=3`（可调 1~5）。
+5. 除非用户明确要求，不要强制重改写（不要默认设 `OPENCLAW_FORCE_REWRITE=1`）。
 
----
+## 3) 标准动作与命令
 
-## 🛠️ 触发指令
+### Action A: 环境诊断/初始化
+适用：用户说“检查环境”、“初始化飞书表结构”、“字段不对”。
 
-当你（OpenClaw Agent）接收到以下指令时，应激活此技能：
-- "启动灵感扫描" / "分析选题"
-- "运行内容流水线" / "开始自动化发布"
-- "处理这篇文章：[URL]"
+执行命令：
+```bash
+python3 scripts/internal/diagnose.py
+python3 scripts/setup/setup_inspiration_library.py
+python3 scripts/setup/setup_content_library.py
+```
 
----
+### Action B: 灵感扫描
+适用：用户说“开始收集灵感”、“分析灵感库”。
 
-## 🧩 核心模式定义
+执行命令：
+```bash
+python3 core/manager_inspiration.py
+```
 
-### 1. 灵感分析模式 (选题漏斗)
-- **执行命令**: `python3 core/manager_inspiration.py`
-- **全环节流程**:
-  1. **捕获**: 实时扫描《内容灵感库》中新增的文章 URL。
-  2. **评估**: 调用 LLM 进行潜力打分 (1-10分) 与核心洞察提取。
-  3. **固化**: 将原文内容转存为飞书文档，并提取所有配图至表格。
-  4. **决策**: 如果评分 < 6 分自动标记为“跳过”，高分选题等待人工点选“已同步”。
+### Action C: 流水线单次巡检（推荐）
+适用：OpenClaw 定时任务、批处理场景。
 
-### 2. 流水线自动化模式 (任务工厂)
-- **执行命令**: `python3 core/manager.py pipeline`
-- **全环节流程**:
-  1. **监听**: 监控《智能内容库》中状态为 `✅ 采集完成` 的记录。
-  2. **深度改写**: 调用 `DeepMPProcessor` 进行行业特稿级改写 (2000字+)。
-  3. **视觉注入**: 借鉴 wenyan 排版美学，生成带视觉样式的 HTML 文档。
-  4. **人工卡位**: 生成 `✨ 已改写(待审)` 转存文档，等待你在飞书内做最后润色。
-  5. **终审推送**: 检测到 `🚀 确认发布` 状态后，自动上传图片至微信 CDN 并推送到草稿箱。
+执行命令（推荐）：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 OPENCLAW_PIPELINE_BATCH_SIZE=3 ./run.sh pipeline-once
+```
 
-### 3. 单篇即时模式 (One-off Mode)
-- **参数要求**：
-    - `url`: 必填，文章链接。
-    - `role`: 默认 `tech_expert`。
-    - `model`: 默认 `volcengine` (豆包)。
-- **执行逻辑**：调用 `./run.sh [url] [role] [model]`。
+等价命令：
+```bash
+OPENCLAW_PIPELINE_BATCH_SIZE=3 python3 core/manager.py pipeline-once
+```
 
----
+### Action D: 流水线守护模式（仅用户明确要求）
+适用：用户明确要求“持续监听”。
 
-## 📂 原生能力支持
+执行命令：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh pipeline
+```
 
-本总控中心不仅是一个调度器，它已经**完全内置融合了**以下高级能力，不再依赖外部技能碎片：
-- **微信文章深度打磨**: 包含图文混排结构抽取与原生排版（直接支持多配图与无头防封机制）
-- **AI 智能生图**: 基于火山引擎即梦 CV 模型直接产出 16:9 高清公众号封面图，内部封装了签名与鉴权闭环
-- **图片智能 OCR 过滤**: 能主动剔除公众号原图中的引流广告、二维码信息，保证迁移到我们平台时的原创洁净度
+### Action E: 单篇即时处理
+适用：用户给定 URL，要立即改写/发布。
 
----
+执行命令：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh "<URL>" "tech_expert" "kimi-k2.5"
+```
 
-## ⚙️ 环境变量要求
+也可直接：
+```bash
+python3 core/manager.py "<URL>" "tech_expert" "kimi-k2.5"
+```
 
-执行此总控技能前，请确保配置文件 `.env` 已具备：
-- `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_APP_TOKEN`: 飞书 API 权限（文档、表格）。
-- `FEISHU_INSPIRATION_TABLE`: (可选) 定义“灵感库”的多维表格名称，默认为 "01_内容灵感库 (OpenClaw)"
-- `FEISHU_PIPELINE_TABLE`: (可选) 定义“发布队列”的多维表格名称，默认为 "02_自动化发布队列 (OpenClaw)"
-- `WECHAT_*`: 微信公众号后台权限。
-- `VOLCENGINE_*` / `KIMI_*`: LLM 与图像生成权限。
+## 4) 模型与参数约定
+模型优先级：
+1. CLI 第三个参数（单篇模式）
+2. 飞书记录字段 `改写模型`（流水线单条）
+3. 环境变量 `OPENCLAW_PIPELINE_MODEL`（流水线默认）
+4. 兜底模型
 
----
+常用可选模型 key：
+1. `kimi-k2.5`
+2. `qwen3.5-plus`
+3. `qwen3-max-2026-01-23`
+4. `qwen3-coder-next`
+5. `qwen3-coder-plus`
+6. `glm-5`
+7. `glm-4.7`
+8. `MiniMax-M2.5`
+9. `volcengine`
 
-## 🚀 平台驱动行动指南 (Agent Action List)
+角色字段：
+1. `改写角色`（飞书字段）
+2. 默认 `tech_expert`
 
-当你 (OpenClaw) 接到用户的宽泛意图时，请严格根据以下触发词，转换为后台脚本的工具调用 (`run_command`)：
+## 5) 流水线状态机（必须按新状态识别）
+1. `🧲 待改写`
+2. `✍️ 改写中`
+3. `🧾 待审核`
+4. `🚀 待发布`
+5. `📤 发布中`
+6. `✅ 已发布`
+7. `❌ 改写失败`
+8. `❌ 发布失败`
+9. `❌ 失败`
 
-### Action 1: 环境诊断与表格初始化 (Doctor)
-- **触发意图**: "帮我检查一下环境配置"、"初始化一下系统"、"飞书表格结构不对"、"Token验证"
-- **执行命令**:
-  - `python3 scripts/internal/diagnose.py` (全局诊断)
-  - `python3 scripts/setup/setup_inspiration_library.py` (初始化灵感库架构)
-  - `python3 scripts/setup/setup_content_library.py` (初始化内容库流水线)
+兼容旧状态文案时，交给系统内部 canonical 映射处理，不要在技能层写死旧状态推进逻辑。
 
-### Action 2: 启动灵感嗅探器 (Inspiration Engine)
-- **触发意图**: "开始收集灵感", "帮我分析下最近有什么好写的", "监控新的输入Url"
-- **执行命令**:
-  - 交互式等待/后台守护: `python3 core/manager_inspiration.py` (使用 `WaitMsBeforeAsync` 派发后台任务，并在日志中观察扫描状态)
-  - 单次触发RSS同步: `python3 scripts/sync_rss_to_inspiration.py`
+## 6) OpenClaw 运行效率约定
+1. 触发频率高时，固定用 `pipeline-once`，让外部调度器重复调用。
+2. 批大小由 `OPENCLAW_PIPELINE_BATCH_SIZE` 控制，避免单次处理过多导致超时。
+3. 字段检查已支持间隔控制：
+   - `OPENCLAW_SCHEMA_CHECK_ENABLED=1`
+   - `OPENCLAW_SCHEMA_CHECK_INTERVAL_SEC=21600`
+4. `run.sh` 已支持依赖哈希缓存，`requirements.txt` 未变化会跳过安装。
 
-### Action 3: 启动主控流水线 (Pipeline Engine)
-- **触发意图**: "处理一下刚才准备好的发文"、"启动自动化发布"、"监控已同步的文章"
-- **执行命令**:
-  - 守护运行 (长时占用): `python3 core/manager.py pipeline` (后台守护，长驻内存)
-  - 定时触发 (Cron 推荐): `python3 core/manager.py pipeline-once` (单次巡检执行后退出，由 OpenClaw 定时调度时不占后台常驻进程)
-  
-### Action 4: 单发测试/紧急响应 (Ad-hoc)
-- **触发意图**: "直接帮我把这篇文章改写发到公众号：https://xxx.xxx"
-- **执行命令**:
-  - `python3 core/manager.py "https://xxx.xxx" tech_expert volcengine` 
-  - (将 URL 换为用户提供的目标 URL)
+## 7) 失败处理与自动处置
+看到以下错误时按对应动作处理：
+1. `No module named ...`
+   - 执行：`python3 -m pip install -r requirements.txt`
+2. `Missing environment variables` 或鉴权失败
+   - 检查并补全 `.env`：`FEISHU_*`, `WECHAT_*`, `LLM/模型相关 key`
+3. `document_id max len is 27` / 无法解析 doc token
+   - 优先检查飞书字段 `改后文档链接` 是否为 `https://www.feishu.cn/docx/...`
+   - 必要时执行修复脚本：
+```bash
+python3 scripts/internal/repair_failed_records.py
+```
+4. 改写失败但无失败备注
+   - 回写失败原因并重跑到 `🧲 待改写` 后再执行 `pipeline-once`
 
----
+## 8) 推荐环境变量模板
+```bash
+OPENCLAW_NON_INTERACTIVE=1
+OPENCLAW_AUTO_INSTALL=0
+OPENCLAW_PIPELINE_BATCH_SIZE=3
+OPENCLAW_PIPELINE_MODEL=kimi-k2.5
+OPENCLAW_PIPELINE_ROLE=tech_expert
+OPENCLAW_SCHEMA_CHECK_ENABLED=1
+OPENCLAW_SCHEMA_CHECK_INTERVAL_SEC=21600
+```
 
-## ⚠️ 常见故障排除 (Troubleshooting)
-作为 OpenClaw Agent，如果你在执行以上 `Action` 时，发现终端返回包含以下关键词的错误，请主动进行处置：
-1. **`No module named ...`**: 发现依赖缺失，请自行 `pip install -r requirements.txt`，不用等待用户确认。
-2. **`Missing environment variables`**: 发现 `.env` 配置不全，请主动询问用户索要并更新 `.env` 文件。
-3. **飞书多维表格列名对不上**: 主动运行 `setup_*` 脚本重新挂载列。
+## 9) 执行边界
+1. 本技能负责“调度与发布链路”。
+2. 不在技能层硬编码业务表字段迁移逻辑，字段变更优先走 `scripts/setup/*`。
+3. 未经用户要求，不做 destructive 操作（删表、批量删记录、清库）。

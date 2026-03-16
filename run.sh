@@ -11,20 +11,45 @@ echo -e "${BLUE}=======================================${NC}"
 echo -e "${BLUE}   🚀 OpenClaw 全自动运营发布工具      ${NC}"
 echo -e "${BLUE}=======================================${NC}"
 
+calc_requirements_hash() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 requirements.txt | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum requirements.txt | awk '{print $1}'
+    else
+        # 兜底：低概率场景（仅用于判断是否变化，不做安全用途）
+        md5 -q requirements.txt 2>/dev/null || cat requirements.txt
+    fi
+}
+
 # 1. 检查环境变量
 if [ ! -f ".env" ] && [ ! -f "../mp-draft-push/.env" ]; then
     echo -e "${YELLOW}⚠️  警告: 未找到 .env 配置文件，请先配置 AppID 和 Secret。${NC}"
 fi
 
-# 2. 检查并安装依赖
-if [ ! -d "venv" ]; then
-    echo -e "${BLUE}📦 正在检查 Python 依赖...${NC}"
-    pip install -r requirements.txt > /dev/null 2>&1 || pip3 install -r requirements.txt > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ 依赖项已就绪${NC}"
+# 2. 依赖检查（OpenClaw 调用优化：requirements 不变时跳过安装）
+if [ "${OPENCLAW_AUTO_INSTALL:-1}" = "1" ]; then
+    CACHE_DIR=".openclaw_cache"
+    HASH_FILE="${CACHE_DIR}/requirements.sha256"
+    mkdir -p "${CACHE_DIR}"
+
+    CUR_HASH="$(calc_requirements_hash)"
+    PREV_HASH="$(cat "${HASH_FILE}" 2>/dev/null)"
+
+    if [ "${CUR_HASH}" != "${PREV_HASH}" ]; then
+        echo -e "${BLUE}📦 检测到依赖变化，正在安装 Python 依赖...${NC}"
+        python3 -m pip install -r requirements.txt > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "${CUR_HASH}" > "${HASH_FILE}"
+            echo -e "${GREEN}✅ 依赖项已就绪${NC}"
+        else
+            echo -e "${YELLOW}⚠️  自动安装依赖失败，您可以尝试手动运行: python3 -m pip install -r requirements.txt${NC}"
+        fi
     else
-        echo -e "${YELLOW}⚠️  自动安装依赖失败，您可以尝试手动运行: pip3 install -r requirements.txt${NC}"
+        echo -e "${GREEN}✅ 依赖未变化，跳过安装${NC}"
     fi
+else
+    echo -e "${YELLOW}ℹ️ 已通过 OPENCLAW_AUTO_INSTALL=0 跳过依赖安装${NC}"
 fi
 
 # 3. 获取文章 URL 及可选参数
@@ -33,8 +58,12 @@ ROLE=$2
 MODEL=$3
 
 if [ -z "$ARTICLE_URL" ]; then
+    if [ "${OPENCLAW_NON_INTERACTIVE:-0}" = "1" ]; then
+        echo -e "${RED}❌ 非交互模式下未提供参数。请传入 URL 或 pipeline/pipeline-once。${NC}"
+        exit 1
+    fi
     echo -e "${YELLOW}请输入要采集的文章 URL:${NC}"
-    read -p "> " ARTICLE_URL
+    read -r -p "> " ARTICLE_URL
 fi
 
 if [ -z "$ARTICLE_URL" ]; then
@@ -44,9 +73,13 @@ fi
 
 # 4. 执行主程序
 echo -e "${BLUE}⚙️  正在启动自动化发布流程...${NC}"
-echo -e "${BLUE}🎭 角色: ${ROLE:-tech_expert} | 🧠 模型: ${MODEL:-kimi}${NC}"
-
-python3 core/manager.py "$ARTICLE_URL" "$ROLE" "$MODEL"
+if [ "$ARTICLE_URL" = "pipeline" ] || [ "$ARTICLE_URL" = "pipeline-once" ]; then
+    echo -e "${BLUE}🧵 流水线模式: ${ARTICLE_URL}${NC}"
+    python3 core/manager.py "$ARTICLE_URL"
+else
+    echo -e "${BLUE}🎭 角色: ${ROLE:-${OPENCLAW_ROLE:-tech_expert}} | 🧠 模型: ${MODEL:-${OPENCLAW_MODEL:-volcengine}}${NC}"
+    python3 core/manager.py "$ARTICLE_URL" "${ROLE:-${OPENCLAW_ROLE:-tech_expert}}" "${MODEL:-${OPENCLAW_MODEL:-volcengine}}"
+fi
 
 if [ $? -eq 0 ]; then
     echo -e "\n${GREEN}=======================================${NC}"

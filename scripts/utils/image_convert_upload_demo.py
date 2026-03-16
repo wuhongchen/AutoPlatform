@@ -6,8 +6,11 @@ import subprocess
 import time
 
 def get_token():
-    ID = "cli_a85b1afbbcb99013"
-    SECRET = "WJ7zZacqrSqUM6HpIpE0BegKJVmDbeN6"
+    ID = os.getenv("FEISHU_APP_ID", "")
+    SECRET = os.getenv("FEISHU_APP_SECRET", "")
+    if not ID or not SECRET:
+        print("❌ 缺少 FEISHU_APP_ID / FEISHU_APP_SECRET")
+        return None
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     try:
         resp = requests.post(url, json={"app_id": ID, "app_secret": SECRET}).json()

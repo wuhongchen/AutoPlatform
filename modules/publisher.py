@@ -107,18 +107,61 @@ class WeChatPublisher:
             print(f"❌ 正文图片上传异常: {e}")
             return None
 
+    def _fit_title_for_wechat(self, title, max_bytes=64):
+        """将标题压缩到微信限制内，尽量保持语义完整，避免半句截断。"""
+        base = re.sub(r'\s+', ' ', (title or "")).strip()
+        if not base:
+            return "未命名标题"
+        if len(base.encode('utf-8')) <= max_bytes:
+            return base
+
+        # 优先尝试取主句（通常在冒号前）
+        for sep in ['：', ':', '|', '｜', '——', '—', '-']:
+            if sep in base:
+                head = base.split(sep)[0].strip()
+                if head and len(head.encode('utf-8')) <= max_bytes:
+                    return head
+
+        # 回退为按字符截断，并尽量在分隔符处收束
+        cut = ""
+        for ch in base:
+            nxt = cut + ch
+            if len(nxt.encode('utf-8')) > max_bytes:
+                break
+            cut = nxt
+        cut = cut.rstrip("，,、：:；;。！？!? ")
+
+        # 优先在最近的自然分隔符处截断，减少“半句感”
+        break_chars = "，,、：:；;。！？!?）)|/"
+        last_break = -1
+        for i, ch in enumerate(cut):
+            if ch in break_chars:
+                last_break = i
+        if last_break >= 8:
+            cut = cut[:last_break].rstrip("，,、：:；;。！？!? ")
+
+        # 若仍然很长，则补省略号（且保证总字节不超限）
+        suffix = "..."
+        if len(cut.encode('utf-8')) > max_bytes - len(suffix):
+            while cut and len((cut + suffix).encode('utf-8')) > max_bytes:
+                cut = cut[:-1]
+            cut = cut.rstrip("，,、：:；;。！？!? ")
+            if cut:
+                return cut + suffix
+        return cut or "未命名标题"
+
     def publish_draft(self, title, content_html, digest, thumb_media_id):
         """创建草稿"""
         if not self.token and not self._get_token():
             return None
             
         # 微信标题限制 64 字节
-        title_bytes = title.encode('utf-8')
+        title_bytes = (title or "").encode('utf-8')
         print(f"🔍 检查标题: '{title}' (长度: {len(title)}, 字节数: {len(title_bytes)})")
         
-        safe_title = title_bytes[:64].decode('utf-8', 'ignore')
-        if len(safe_title) < len(title):
-            print(f"⚠️ 标题超过 64 字节，已自动截断: {safe_title}")
+        safe_title = self._fit_title_for_wechat(title, max_bytes=64)
+        if safe_title != title:
+            print(f"⚠️ 标题超过 64 字节，已智能缩短: {safe_title}")
 
         print(f"📝 创建草稿: {safe_title}")
         url = f'https://api.weixin.qq.com/cgi-bin/draft/add?access_token={self.token}'

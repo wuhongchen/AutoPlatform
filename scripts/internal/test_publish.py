@@ -7,12 +7,20 @@ if PROJECT_ROOT not in sys.path:
 
 from config import Config
 from core.manager import AutoPlatformManager
+from modules.state_machine import PipelineState, canonical_pipeline_status
 
 def test_publish():
     mgr = AutoPlatformManager()
     # Find the record
     records = mgr.feishu.list_records(mgr.smart_table_id)
-    target = next((item for item in records.get('items', []) if "Tabbit" in item.get('fields', {}).get('标题', '') and item.get('fields', {}).get('数据流程状态') in ['✨ 已改写(待审)', '❌ 发布失败']), None)
+    target = next(
+        (
+            item for item in records.get('items', [])
+            if "Tabbit" in item.get('fields', {}).get('标题', '')
+            and canonical_pipeline_status(item.get('fields', {}).get('数据流程状态')) in [PipelineState.REVIEW_READY, PipelineState.PUBLISH_FAILED]
+        ),
+        None
+    )
     
     if target:
         record_id = target['record_id']

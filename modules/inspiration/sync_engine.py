@@ -1,4 +1,5 @@
 from datetime import datetime
+from modules.state_machine import PipelineState
 
 class InspirationSyncEngine:
     """
@@ -34,7 +35,7 @@ class InspirationSyncEngine:
             "标题": record_fields.get("标题", ""),
             "原文文档链接": doc_url,
             "备注": f"来自灵感库。AI 推荐评分: {record_fields.get('AI 爆款潜力评分')}。理由: {record_fields.get('AI 推荐理由')}",
-            "数据流程状态": "✅ 采集完成", # 同步过去后，初始状态为采集完成
+            "数据流程状态": PipelineState.QUEUED_REWRITE, # 同步过去后进入待改写节点
             "负责人": "AI-Sync"
         }
         

@@ -167,7 +167,7 @@ class DeepMPProcessor:
         
         # 1. 移除内容体中的标题标记行 (这些用于提取 title 字段，不应出现在最终正文内)
         processed = re.sub(r'^【标题：.*?】\s*\n?', '', processed, flags=re.MULTILINE)
-        processed = re.sub(r'^[标题|Title][:：].*?\n?', '', processed, flags=re.MULTILINE)
+        processed = re.sub(r'^(?:标题|Title)[:：].*?\n?', '', processed, flags=re.MULTILINE)
         processed = re.sub(r'^#[#\s]+.*?\n?', '', processed, flags=re.MULTILINE) # 移除可能的 Markdown H1/H2 标题行
         
         # 2. 移除 AI 可能产生的“导读”字样或空行开头
@@ -193,7 +193,7 @@ class DeepMPProcessor:
         try:
             # 基础清理
             text = re.sub(r'^【AI改后稿】\s*', '', text)
-            text = re.sub(r'^[标题|Title][:：]\s*', '', text)
+            text = re.sub(r'^(?:标题|Title)[:：]\s*', '', text)
             
             patterns = [
                 r"【标题：(.*?)】",
@@ -227,80 +227,532 @@ class DeepMPProcessor:
             return "深度视角 | 行业精选"
 
 class WeChatFormatter:
-    """自动将飞书导出的干瘪 HTML 注入具有高级呼吸感的微信公众号排版样式"""
+    """公众号 HTML 美化器（移动优先）。
+
+    能力增强：
+    - DOM 级重排（替代简单正则替换，避免结构破坏）
+    - Markdown 兜底渲染（markdown-it-py, GitHub: executablebooks/markdown-it-py）
+    - 样式参考 doocs/md 主题体系，适配公众号窄屏阅读
+    """
+
+    _TAG_STYLE_MAP = {
+        "p": "margin: 16px 0; font-size: 16px; line-height: 1.9; color: #1f2937; text-align: justify; text-indent: 2em; letter-spacing: 0.02em; word-break: break-word;",
+        "h1": "margin: 28px 0 18px; padding-bottom: 10px; border-bottom: 2px solid #2563eb; font-size: 24px; line-height: 1.4; color: #0f172a; text-align: center; font-weight: 700;",
+        "h2": "margin: 30px 0 14px; padding: 6px 10px 6px 12px; border-left: 4px solid #2563eb; background: #eef4ff; border-radius: 6px; font-size: 20px; line-height: 1.5; color: #0f172a; font-weight: 700;",
+        "h3": "margin: 24px 0 12px; padding-left: 9px; border-left: 3px solid #93c5fd; font-size: 18px; line-height: 1.55; color: #1e3a8a; font-weight: 700;",
+        "blockquote": "margin: 18px 0; padding: 12px 14px; border-left: 4px solid #60a5fa; background: #f8fbff; border-radius: 8px; color: #334155; font-size: 15px; line-height: 1.8;",
+        "ul": "margin: 12px 0; padding-left: 1.2em; color: #1f2937;",
+        "ol": "margin: 12px 0; padding-left: 1.2em; color: #1f2937;",
+        "li": "margin: 8px 0; font-size: 16px; line-height: 1.8; color: #1f2937;",
+        "pre": "margin: 14px 0; padding: 12px 14px; background: #0f172a; color: #e2e8f0; border-radius: 10px; overflow-x: auto; font-size: 13px; line-height: 1.7;",
+        "code": "padding: 0.1em 0.35em; border-radius: 4px; background: #eef2ff; color: #3730a3; font-family: Menlo, Monaco, Consolas, monospace; font-size: 0.92em;",
+        "table": "width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; line-height: 1.6;",
+        "th": "padding: 8px 10px; border: 1px solid #e5e7eb; background: #f8fafc; color: #0f172a; font-weight: 600; text-align: left;",
+        "td": "padding: 8px 10px; border: 1px solid #e5e7eb; color: #1f2937; vertical-align: top;",
+        "a": "color: #2563eb; text-decoration: underline; text-underline-offset: 2px; word-break: break-all;",
+        "strong": "font-weight: 700; color: #111827;",
+        "b": "font-weight: 700; color: #111827;",
+        "em": "font-style: italic; color: #374151;",
+        "hr": "border: none; border-top: 1px solid #e5e7eb; margin: 18px 0;",
+    }
+
+    _WRAPPER_STYLE = (
+        "font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', "
+        "'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif; "
+        "max-width: 677px; margin: 0 auto; padding: 12px 14px; background: #ffffff; "
+        "color: #111827; box-sizing: border-box; overflow-wrap: break-word; word-break: break-word;"
+    )
+
+    @staticmethod
+    def _append_style(tag, style_text):
+        if not style_text:
+            return
+        existing = (tag.get("style") or "").strip().rstrip(";")
+        merged = f"{existing}; {style_text}" if existing else style_text
+        tag["style"] = merged.strip()
+
+    @staticmethod
+    def _strip_leading_title_lines(raw_text):
+        lines = (raw_text or "").splitlines()
+        out = []
+        content_started = False
+        title_pattern = re.compile(r'^(【.*?标题.*?】|(?:标题|Title|文章标题)[:：].*|#+\s+.*)$', re.IGNORECASE)
+        for line in lines:
+            s = line.strip()
+            if not content_started:
+                if not s:
+                    continue
+                if title_pattern.match(s):
+                    continue
+                # 纯 H1/H2 行也去掉
+                if re.match(r'^<h[12][^>]*>.*?</h[12]>$', s, re.IGNORECASE):
+                    continue
+                content_started = True
+            out.append(line)
+        return "\n".join(out).strip()
+
+    @staticmethod
+    def _looks_like_markdown(text):
+        if not text:
+            return False
+        if re.search(r'</?(p|h[1-6]|div|section|img|blockquote|ul|ol|li|table|pre|code)\b', text, re.IGNORECASE):
+            return False
+        indicators = [
+            r'^\s{0,3}#{1,6}\s+',
+            r'^\s*[-*+]\s+',
+            r'^\s*\d+\.\s+',
+            r'```',
+            r'^\s*>\s+',
+            r'!\[.*?\]\(.*?\)',
+            r'\[.*?\]\(.*?\)'
+        ]
+        return any(re.search(p, text, re.MULTILINE) for p in indicators)
+
+    @staticmethod
+    def _maybe_markdown_to_html(raw_text):
+        text = (raw_text or "").strip()
+        if not text:
+            return ""
+        if not WeChatFormatter._looks_like_markdown(text):
+            return text
+        try:
+            # GitHub: https://github.com/executablebooks/markdown-it-py
+            from markdown_it import MarkdownIt
+            md = MarkdownIt("commonmark", {"breaks": True, "linkify": True}).enable("table")
+            return md.render(text)
+        except Exception:
+            return WeChatFormatter._simple_markdown_to_html(text)
+
+    @staticmethod
+    def _simple_markdown_to_html(text):
+        """无 markdown-it-py 时的轻量兜底解析，保证可读性不塌陷。"""
+        from html import escape
+
+        def inline(md_line):
+            escaped = escape(md_line)
+            escaped = re.sub(r'!\[(.*?)\]\((.*?)\)', r'<img alt="\1" src="\2" />', escaped)
+            escaped = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', escaped)
+            escaped = re.sub(r'`([^`]+)`', r'<code>\1</code>', escaped)
+            return escaped
+
+        lines = text.splitlines()
+        html_parts = []
+        in_ul = False
+        in_ol = False
+
+        def close_lists():
+            nonlocal in_ul, in_ol
+            if in_ul:
+                html_parts.append("</ul>")
+                in_ul = False
+            if in_ol:
+                html_parts.append("</ol>")
+                in_ol = False
+
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                close_lists()
+                continue
+
+            if line.startswith("### "):
+                close_lists()
+                html_parts.append(f"<h3>{inline(line[4:])}</h3>")
+                continue
+            if line.startswith("## "):
+                close_lists()
+                html_parts.append(f"<h2>{inline(line[3:])}</h2>")
+                continue
+            if line.startswith("# "):
+                close_lists()
+                html_parts.append(f"<h1>{inline(line[2:])}</h1>")
+                continue
+            if line.startswith("> "):
+                close_lists()
+                html_parts.append(f"<blockquote><p>{inline(line[2:])}</p></blockquote>")
+                continue
+
+            m_ol = re.match(r'^(\d+)\.\s+(.*)$', line)
+            if m_ol:
+                if in_ul:
+                    html_parts.append("</ul>")
+                    in_ul = False
+                if not in_ol:
+                    html_parts.append("<ol>")
+                    in_ol = True
+                html_parts.append(f"<li>{inline(m_ol.group(2))}</li>")
+                continue
+
+            if re.match(r'^[-*+]\s+.+$', line):
+                if in_ol:
+                    html_parts.append("</ol>")
+                    in_ol = False
+                if not in_ul:
+                    html_parts.append("<ul>")
+                    in_ul = True
+                html_parts.append(f"<li>{inline(line[2:])}</li>")
+                continue
+
+            close_lists()
+            html_parts.append(f"<p>{inline(line)}</p>")
+
+        close_lists()
+        return "\n".join(html_parts).strip()
+
+    @staticmethod
+    def _extract_core_points(text):
+        compact = re.sub(r'\s+', ' ', (text or '')).strip()
+        m = re.match(r'^(?:📌\s*)?本文核心看点[:：]\s*(.+)$', compact)
+        if not m:
+            return None
+        rest = m.group(1).strip()
+        raw_items = re.split(r'\s*(?=\d+[\.、]\s*)', rest)
+        items = []
+        for it in raw_items:
+            s = re.sub(r'^\d+[\.、]\s*', '', it).strip(' ；;，,。')
+            if s:
+                items.append(s)
+        return items if len(items) >= 2 else None
+
+    @staticmethod
+    def _split_long_paragraph(text, target=120):
+        text = (text or "").strip()
+        if len(text) < 180:
+            return [text] if text else []
+        parts = re.split(r'(?<=[。！？!?])\s*', text)
+        parts = [p.strip() for p in parts if p.strip()]
+        if len(parts) < 3:
+            return [text]
+
+        segs = []
+        buf = ""
+        for sent in parts:
+            if len(buf) + len(sent) <= target or len(buf) < int(target * 0.65):
+                buf += sent
+            else:
+                segs.append(buf.strip())
+                buf = sent
+        if buf:
+            segs.append(buf.strip())
+        return segs if len(segs) >= 2 else [text]
+
+    @staticmethod
+    def _enhance_semantic_structure(soup, container):
+        paragraphs = list(container.find_all("p"))
+        for p in paragraphs:
+            text = p.get_text(" ", strip=True)
+            if not text:
+                continue
+
+            # 1) 核心看点段 → H2 + 有序列表
+            core_items = WeChatFormatter._extract_core_points(text)
+            if core_items:
+                h2 = soup.new_tag("h2")
+                h2.string = "本文核心看点"
+                ol = soup.new_tag("ol")
+                for item in core_items:
+                    li = soup.new_tag("li")
+                    li.string = item
+                    ol.append(li)
+                p.insert_before(h2)
+                h2.insert_after(ol)
+                p.decompose()
+                continue
+
+            # 2) 疑似小标题段落提升层级
+            compact = re.sub(r'\s+', ' ', text).strip()
+            is_heading_like = (
+                (len(compact) <= 32 and compact.endswith(("：", ":")))
+                or (len(compact) <= 26 and re.match(r'^(?:\d+[\.、]|[一二三四五六七八九十]+[、.．]|[(（]?[一二三四五六七八九十0-9]{1,2}[)）])', compact))
+            )
+            if is_heading_like and not re.search(r'[。！？!?]', compact):
+                h3 = soup.new_tag("h3")
+                h3.string = compact.rstrip("：:")
+                p.insert_before(h3)
+                p.decompose()
+                continue
+
+            # 3) 过长段落按句拆分，增强呼吸感
+            segs = WeChatFormatter._split_long_paragraph(compact)
+            if len(segs) >= 2:
+                for seg in segs:
+                    np = soup.new_tag("p")
+                    np.string = seg
+                    p.insert_before(np)
+                p.decompose()
+
+    @staticmethod
+    def _inject_auto_subheads(soup, container):
+        """当正文缺少标题层级时，自动插入小标题，增强段落感。"""
+        has_heading = bool(container.find(["h2", "h3"]))
+        if has_heading:
+            return
+
+        paragraphs = [
+            p for p in container.find_all("p")
+            if len(p.get_text(" ", strip=True)) >= 38
+        ]
+        if len(paragraphs) < 5:
+            return
+
+        plan = [
+            (1, "问题背景"),
+            (3, "实操路径"),
+            (5, "关键结论"),
+        ]
+        for idx, title in reversed(plan):
+            if idx < len(paragraphs):
+                h3 = soup.new_tag("h3")
+                h3.string = title
+                paragraphs[idx].insert_before(h3)
+
+    @staticmethod
+    def _decorate_visual_blocks(soup, container):
+        """增加导语卡片和看点卡片，让视觉层次更明显。"""
+        # 1) 导语卡片：首个长段落转为浅底色卡片
+        first_para = None
+        for p in container.find_all("p"):
+            txt = p.get_text(" ", strip=True)
+            if len(txt) >= 50:
+                first_para = p
+                break
+        if first_para:
+            txt = first_para.get_text(" ", strip=True)
+            if 50 <= len(txt) <= 260:
+                card = soup.new_tag("section")
+                card["style"] = (
+                    "margin: 10px 0 20px; padding: 16px 14px; border-radius: 12px; "
+                    "background: linear-gradient(135deg, #f4f8ff 0%, #eef3ff 100%); "
+                    "border: 1px solid #dbe7ff;"
+                )
+                badge = soup.new_tag("div")
+                badge["style"] = (
+                    "display: inline-block; margin-bottom: 8px; padding: 2px 8px; "
+                    "font-size: 12px; color: #1d4ed8; background: #dbeafe; border-radius: 999px;"
+                )
+                badge.string = "导语"
+                body = soup.new_tag("div")
+                body["style"] = (
+                    "font-size: 16px; line-height: 1.9; color: #1e293b; text-align: justify; "
+                    "word-break: break-word;"
+                )
+                body.string = txt
+                card.append(badge)
+                card.append(body)
+                first_para.replace_with(card)
+
+        # 2) 核心看点卡片：h2=本文核心看点 + 紧随列表打包
+        for h2 in list(container.find_all("h2")):
+            if h2.get_text(" ", strip=True) != "本文核心看点":
+                continue
+            nxt = h2.find_next_sibling()
+            if not nxt or nxt.name not in ("ol", "ul"):
+                continue
+            card = soup.new_tag("section")
+            card["style"] = (
+                "margin: 14px 0 20px; padding: 12px 12px 6px; border-radius: 12px; "
+                "background: #f8fbff; border: 1px solid #dbeafe;"
+            )
+            h2.insert_before(card)
+            card.append(h2.extract())
+            card.append(nxt.extract())
+
+    @staticmethod
+    def _is_enabled(raw_value):
+        return str(raw_value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _build_ad_block(soup):
+        """构建通用广告位区块（内容由环境变量配置）。"""
+        if not WeChatFormatter._is_enabled(Config.WECHAT_AD_ENABLED):
+            return None
+
+        ad_text = (Config.WECHAT_AD_TEXT or "").strip()
+        ad_img_path = (Config.WECHAT_AD_IMAGE_PATH or "").strip()
+        ad_img_url = (Config.WECHAT_AD_IMAGE_URL or "").strip()
+        if not ad_text:
+            if not ad_img_path and not ad_img_url:
+                return None
+
+        ad_title = (Config.WECHAT_AD_TITLE or "推广信息").strip()
+        ad_link_text = (Config.WECHAT_AD_LINK_TEXT or "").strip()
+        ad_link_url = (Config.WECHAT_AD_LINK_URL or "").strip()
+        ad_img_link = (Config.WECHAT_AD_IMAGE_LINK_URL or "").strip() or ad_link_url
+
+        wrapper = soup.new_tag("section")
+        wrapper["data-ad-block"] = "1"
+        wrapper["style"] = (
+            "margin: 16px 0 20px; padding: 12px 12px 10px; border-radius: 12px; "
+            "background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border: 1px solid #fed7aa;"
+        )
+
+        badge = soup.new_tag("div")
+        badge["style"] = (
+            "display: inline-block; margin-bottom: 8px; padding: 2px 8px; font-size: 12px; "
+            "color: #9a3412; background: #ffedd5; border-radius: 999px;"
+        )
+        badge.string = ad_title
+        wrapper.append(badge)
+
+        img_src = ""
+        if ad_img_path and os.path.exists(ad_img_path):
+            # 通过占位协议让发布环节上传到微信 CDN，再回填可用 URL
+            img_src = "local://wechat_ad_image"
+        elif ad_img_url:
+            img_src = ad_img_url
+
+        if img_src:
+            img = soup.new_tag("img", src=img_src)
+            img["alt"] = ad_title or "推广图片"
+            img["style"] = (
+                "display: block; width: 100%; max-width: 100%; height: auto; margin: 2px auto 8px; "
+                "border-radius: 10px; border: 1px solid #fed7aa;"
+            )
+            if ad_img_link:
+                link = soup.new_tag("a", href=ad_img_link)
+                link["style"] = "display: block; text-decoration: none;"
+                link.append(img)
+                wrapper.append(link)
+            else:
+                wrapper.append(img)
+
+        if ad_text:
+            body = soup.new_tag("div")
+            body["style"] = "font-size: 15px; line-height: 1.8; color: #7c2d12; text-align: justify; word-break: break-word;"
+            body.string = ad_text
+            wrapper.append(body)
+
+        if ad_link_text and ad_link_url:
+            cta = soup.new_tag("a", href=ad_link_url)
+            cta["style"] = (
+                "display: inline-block; margin-top: 10px; color: #9a3412; font-size: 14px; "
+                "text-decoration: underline; text-underline-offset: 2px; word-break: break-all;"
+            )
+            cta.string = ad_link_text
+            wrapper.append(cta)
+
+        return wrapper
+
+    @staticmethod
+    def _inject_ad_block(soup, container):
+        block = WeChatFormatter._build_ad_block(soup)
+        if not block:
+            return
+
+        position = str(Config.WECHAT_AD_POSITION or "bottom").strip().lower()
+        if position not in {"top", "bottom", "both"}:
+            position = "bottom"
+
+        if position in {"top", "both"}:
+            container.insert(0, block)
+
+        if position in {"bottom", "both"}:
+            bottom_block = block if position == "bottom" else WeChatFormatter._build_ad_block(soup)
+            if bottom_block:
+                container.append(bottom_block)
+
+    @staticmethod
+    def _is_inside_ad_block(tag):
+        current = tag
+        while current is not None:
+            if getattr(current, "attrs", None) and current.attrs.get("data-ad-block") == "1":
+                return True
+            current = getattr(current, "parent", None)
+        return False
+
     @staticmethod
     def deep_optimize_format(html_content):
-        import re
-        
-        # 0. 内容清洗：强力移除开头可能出现的重复标题行
-        # 匹配格式如：【标题：xxx】、标题：xxx、Title: xxx、# 标题 等
-        # 注意只处理开头的几行，避免误删正文内容
-        lines = html_content.split('\n')
-        cleaned_lines = []
-        found_content = False
-        for line in lines:
-            line_strip = line.strip()
-            if not found_content:
-                # 匹配标题模式
-                is_title = (
-                    re.match(r'^【.*?标题.*?】', line_strip) or 
-                    re.match(r'^[标题|Title|文章标题][:：]', line_strip) or
-                    re.match(r'^<h[12][^>]*>.*?</h[12]>', line_strip) or # 移除开头的 H1/H2
-                    re.match(r'^#+\s+', line_strip)
-                )
-                if is_title:
-                    continue
-                if line_strip: # 遇到第一个非空且非标题的内容行
-                    found_content = True
-            cleaned_lines.append(line)
-        
-        html_content = '\n'.join(cleaned_lines).strip()
+        from bs4 import BeautifulSoup
 
-        # 1. 基础段落 (提供呼吸感和舒适的护眼行高)
-        p_style = "margin-top: 15px; margin-bottom: 15px; font-size: 16px; line-height: 1.8; color: #3f3f3f; text-align: justify; letter-spacing: 0.8px; word-break: break-all;"
-        html_content = re.sub(r'<p>', f'<p style="{p_style}">', html_content)
-        
-        # 2. 一级标题 (居中/醒目风格)
-        h1_style = "font-size: 22px; color: #1a1a1a; text-align: center; font-weight: bold; margin-top: 50px; margin-bottom: 25px; line-height: 1.6; letter-spacing: 1px;"
-        html_content = re.sub(r'<h1>', f'<h1 style="{h1_style}">', html_content)
-        
-        # 2.5 二级标题 (左边界带风格)
-        h2_style = "font-size: 20px; color: #1a1a1a; padding-bottom: 8px; border-bottom: 2px solid #e1e7f0; margin-top: 45px; margin-bottom: 20px; line-height: 1.6; font-weight: bold; border-left: 5px solid #2b5cff; padding-left: 12px; display: block;"
-        html_content = re.sub(r'<h2>', f'<h2 style="{h2_style}">', html_content)
-        
-        # 3. 三级标题
-        h3_style = "font-size: 17px; color: #2c3e50; margin-top: 30px; margin-bottom: 15px; font-weight: bold; line-height: 1.6; padding-left: 8px; position: relative;"
-        html_content = re.sub(r'<h3>', f'<h3 style="{h3_style}"><span style="color:#2b5cff; margin-right:5px;">▪</span>', html_content)
-        
-        # 4. 引用块 (导读/金句区域)
-        blockquote_style = "margin: 25px 0; padding: 18px 22px; background-color: #f7f9fa; border-left: 4px solid #2c3e50; font-size: 15px; color: #5a6b7c; border-radius: 6px; line-height: 1.8; box-shadow: 0 1px 4px rgba(0,0,0,0.03);"
-        html_content = re.sub(r'<blockquote>', f'<blockquote style="{blockquote_style}">', html_content)
-        
-        # 5. 加粗字体强化
-        b_style = "font-weight: bold; color: #b83b5e;"
-        html_content = re.sub(r'<b>', f'<b style="{b_style}">', html_content)
-        html_content = re.sub(r'<strong>', f'<strong style="{b_style}">', html_content)
-        
-        # 6. 列表样式
-        li_style = "margin-bottom: 10px; font-size: 16px; line-height: 1.8; color: #3f3f3f;"
-        html_content = re.sub(r'<li>', f'<li style="{li_style}">', html_content)
-        ul_style = "padding-left: 25px; margin-top: 10px; margin-bottom: 20px;"
-        html_content = re.sub(r'<ul>', f'<ul style="{ul_style}">', html_content)
-        html_content = re.sub(r'<ol>', f'<ol style="{ul_style}">', html_content)
-        
-        # 将整个内容包裹在一个优化过的公众号视觉容器中
-        wrapper_style = "font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; padding: 15px 18px; max-width: 677px; margin: 0 auto; background-color: #ffffff; overflow-wrap: break-word;"
-        return f'<section style="{wrapper_style}">\n{html_content}\n</section>'
+        normalized = WeChatFormatter._strip_leading_title_lines(html_content or "")
+        normalized = re.sub(r'```(?:html|markdown)?\n?', '', normalized, flags=re.IGNORECASE)
+        normalized = normalized.replace('```', '').strip()
+        normalized = WeChatFormatter._maybe_markdown_to_html(normalized)
+
+        if not normalized:
+            return f'<section style="{WeChatFormatter._WRAPPER_STYLE}"><p style="{WeChatFormatter._TAG_STYLE_MAP["p"]}">（内容为空）</p></section>'
+
+        soup = BeautifulSoup(normalized, "html.parser")
+        container = soup.body if soup.body else soup
+
+        # 删除脚本类标签，避免样式污染
+        for t in container.find_all(["script", "style", "iframe"]):
+            t.decompose()
+
+        # 清理前导标题节点，避免正文重复显示标题
+        leading_pattern = re.compile(r'^(【.*?标题.*?】|(?:标题|Title|文章标题)[:：].*|#+\s+.*)$', re.IGNORECASE)
+        for node in list(container.children):
+            text = getattr(node, "get_text", lambda *args, **kwargs: str(node))(" ", strip=True) if hasattr(node, "get_text") else str(node).strip()
+            if not text:
+                if hasattr(node, "extract"):
+                    node.extract()
+                continue
+            if leading_pattern.match(text):
+                if hasattr(node, "decompose"):
+                    node.decompose()
+                else:
+                    node.extract()
+                continue
+            break
+
+        # 在样式注入前做一次语义增强，提升“标题感/段落感”
+        WeChatFormatter._enhance_semantic_structure(soup, container)
+        WeChatFormatter._inject_auto_subheads(soup, container)
+        WeChatFormatter._decorate_visual_blocks(soup, container)
+        WeChatFormatter._inject_ad_block(soup, container)
+
+        for tag_name, style_text in WeChatFormatter._TAG_STYLE_MAP.items():
+            for tag in container.find_all(tag_name):
+                if WeChatFormatter._is_inside_ad_block(tag):
+                    continue
+                WeChatFormatter._append_style(tag, style_text)
+
+        # 移动端图片体验：统一宽度、圆角、居中、自适应
+        for img in container.find_all("img"):
+            if WeChatFormatter._is_inside_ad_block(img):
+                continue
+            for attr in ["width", "height", "data-width", "data-height"]:
+                if attr in img.attrs:
+                    del img.attrs[attr]
+            WeChatFormatter._append_style(
+                img,
+                "display: block; width: 100%; max-width: 100%; height: auto; margin: 12px auto; border-radius: 10px; object-fit: cover;"
+            )
+
+        # 表格增加横向滚动容器，避免手机端溢出
+        for table in container.find_all("table"):
+            parent = table.parent
+            parent_style = (parent.get("style", "") if parent else "")
+            if parent and parent.name in ["section", "div"] and "overflow-x" in parent_style:
+                continue
+            wrapper = soup.new_tag("section")
+            wrapper["style"] = "width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 12px 0;"
+            table.wrap(wrapper)
+
+        # 避免无意义的空段落导致版面稀碎
+        for p in container.find_all("p"):
+            if not p.get_text(" ", strip=True) and not p.find("img"):
+                p.decompose()
+
+        body_html = "".join(str(x) for x in container.contents).strip()
+        if not body_html:
+            body_html = f'<p style="{WeChatFormatter._TAG_STYLE_MAP["p"]}">（内容为空）</p>'
+
+        return f'<section style="{WeChatFormatter._WRAPPER_STYLE}">\n{body_html}\n</section>'
 
     @staticmethod
     def optimize_title(title):
         import re
         clean_title = re.sub(r'^【AI改后稿】\s*', '', title)
-        clean_title = re.sub(r'^[标题|Title|文章标题][:：]\s*', '', clean_title)
+        clean_title = re.sub(r'^(?:标题|Title|文章标题)[:：]\s*', '', clean_title)
         clean_title = re.sub(r'^#+\s*', '', clean_title)
         clean_title = clean_title.strip()
-        # 尽量缩短多余的部分
-        if len(clean_title) > 60:
-            clean_title = clean_title.split('：')[0].split('|')[0]
+        # 尽量缩短多余部分（按字节约束，避免微信侧硬截断）
+        if len(clean_title.encode('utf-8')) > 64:
+            for sep in ['：', ':', '|', '｜']:
+                if sep in clean_title:
+                    head = clean_title.split(sep)[0].strip()
+                    if head and len(head.encode('utf-8')) <= 64:
+                        clean_title = head
+                        break
         return clean_title
-

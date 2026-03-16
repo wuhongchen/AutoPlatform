@@ -1,6 +1,3 @@
-import requests
-from bs4 import BeautifulSoup
-import re
 from modules.collector import ContentCollector
 
 class InspirationCollector(ContentCollector):
@@ -23,4 +20,4 @@ if __name__ == "__main__":
     result = col.fetch_with_metrics("https://mp.weixin.qq.com/s/UhQSCacrzkyxrFp2uGgzjQ")
     if result:
         print(f"标题: {result['title']}")
-        print(f"指标: {result['metrics']}")
+        print(f"正文长度: {len(result.get('content_raw', ''))}")

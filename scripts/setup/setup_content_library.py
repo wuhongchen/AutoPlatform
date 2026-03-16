@@ -10,6 +10,7 @@ if PROJECT_ROOT not in sys.path:
 
 from config import Config
 from modules.feishu import FeishuBitable
+from modules.state_machine import PIPELINE_STATUS_OPTIONS, PipelineState
 
 load_dotenv()
 
@@ -58,15 +59,8 @@ def setup():
             else:
                 print("✅ 字段 [数据流程状态] 已经是单选类型，跳过更新。")
 
-    # 定义单选选项
-    status_options = [
-        {"name": "✅ 采集完成"},
-        {"name": "✅ 改写完成"},
-        {"name": "✅ 生图完成"},
-        {"name": "✅ 发布完成"},
-        {"name": "✨ 流程全通"},
-        {"name": "❌ 失败"},
-    ]
+    # 定义单选选项（新版流水线状态机）
+    status_options = PIPELINE_STATUS_OPTIONS
     
     fields = [
         ("编号", 1, None),
@@ -91,7 +85,7 @@ def setup():
             "原创度": 92,
             "草稿 ID": "f98nLrQV...35J4BDr",
             "备注": "已使用 Prompt 3 改写。引入 KANO 模型。",
-            "数据流程状态": "✅ 采集 -> ✅ 改写 -> ✅ 生图 -> ✅ 发布",
+            "数据流程状态": PipelineState.PUBLISHED,
             "负责人": "CEO"
         }
     ]

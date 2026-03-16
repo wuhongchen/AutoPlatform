@@ -1,5 +1,5 @@
 import time
-from manager import AutoPlatformManager
+from core.manager import AutoPlatformManager
 
 urls = [
     "https://mp.weixin.qq.com/s/SqB9llfkT2o8x4v_LX-Ang",

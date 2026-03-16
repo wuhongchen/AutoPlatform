@@ -7,8 +7,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "../mp-draft-push/.env"))
 
 class Config:
     # 微信配置
-    WECHAT_APPID = os.getenv("WECHAT_APPID", "wx0d47adc0348efc8e")
-    WECHAT_SECRET = os.getenv("WECHAT_SECRET", "e8514c78ee7334fdc3ed9db3f98d7d8a")
+    WECHAT_APPID = os.getenv("WECHAT_APPID", "")
+    WECHAT_SECRET = os.getenv("WECHAT_SECRET", "")
     WECHAT_AUTHOR = os.getenv("WECHAT_AUTHOR", "W 小龙虾")
     
     # 火山引擎配置 (即梦 AI)
@@ -31,6 +31,17 @@ class Config:
     # 其他配置
     DEFAULT_COVER_URL = os.getenv("DEFAULT_COVER_URL")
     OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+
+    # 公号广告位配置（用于发布模板注入）
+    WECHAT_AD_ENABLED = os.getenv("WECHAT_AD_ENABLED", "0")
+    WECHAT_AD_POSITION = os.getenv("WECHAT_AD_POSITION", "bottom")  # top | bottom | both
+    WECHAT_AD_TITLE = os.getenv("WECHAT_AD_TITLE", "推广信息")
+    WECHAT_AD_TEXT = os.getenv("WECHAT_AD_TEXT", "")
+    WECHAT_AD_LINK_TEXT = os.getenv("WECHAT_AD_LINK_TEXT", "")
+    WECHAT_AD_LINK_URL = os.getenv("WECHAT_AD_LINK_URL", "")
+    WECHAT_AD_IMAGE_PATH = os.getenv("WECHAT_AD_IMAGE_PATH", "")  # 本地图片路径（推荐）
+    WECHAT_AD_IMAGE_URL = os.getenv("WECHAT_AD_IMAGE_URL", "")    # 远程图片 URL（可选）
+    WECHAT_AD_IMAGE_LINK_URL = os.getenv("WECHAT_AD_IMAGE_LINK_URL", "")
     
     @classmethod
     def check_keys(cls):

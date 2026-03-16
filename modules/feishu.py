@@ -13,6 +13,7 @@ class FeishuBitable:
         self.app_token = app_token
         self.base_url = "https://open.feishu.cn/open-apis"
         self.token = None
+        self._doc_meta_cache = {}
 
     def _get_token(self, force=False):
         """获取 tenant_access_token"""
@@ -143,6 +144,76 @@ class FeishuBitable:
             return resp.get('data', {}).get('record')
         except: return None
 
+    def _extract_doc_token_from_text(self, value):
+        """从 URL / token 文本中提取 docx token。"""
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+
+        m = re.search(r'feishu\.cn/docx/([A-Za-z0-9]{20,})', raw)
+        if m:
+            return m.group(1)
+
+        if re.fullmatch(r'[A-Za-z0-9]{20,60}', raw):
+            return raw
+        return ""
+
+    def resolve_docx_token(self, document_id):
+        """将 docx URL / Wiki token / docx token 统一解析成 docx token。"""
+        if not self.token and not self._get_token():
+            return None
+
+        token = self._extract_doc_token_from_text(document_id)
+        if not token:
+            return None
+
+        # 兼容传入 wiki token 的场景
+        if len(token) >= 20:
+            headers = {"Authorization": f"Bearer {self.token}"}
+            wiki_url = f"{self.base_url}/wiki/v2/spaces/get_node"
+            params = {"token": token}
+            try:
+                wiki_resp = requests.get(wiki_url, headers=headers, params=params).json()
+                if wiki_resp.get("code") == 0:
+                    node = wiki_resp.get("data", {}).get("node", {})
+                    if node.get("obj_type") == "docx" and node.get("obj_token"):
+                        print(f"🔗 已成功将 Wiki 节点解析为 docx 对象: {node.get('obj_token')}")
+                        return node.get("obj_token")
+            except Exception:
+                pass
+
+        return token
+
+    def get_docx_meta(self, document_id, use_cache=True):
+        """轻量获取文档元信息（仅验证 token + 获取标题）。"""
+        if not self.token and not self._get_token():
+            return None
+
+        resolved_id = self.resolve_docx_token(document_id)
+        if not resolved_id:
+            return None
+
+        if use_cache and resolved_id in self._doc_meta_cache:
+            return self._doc_meta_cache[resolved_id]
+
+        headers = {"Authorization": f"Bearer {self.token}"}
+        doc_meta_url = f"{self.base_url}/docx/v1/documents/{resolved_id}"
+        try:
+            meta_resp = requests.get(doc_meta_url, headers=headers).json()
+            if meta_resp.get("code") != 0:
+                print(f"❌ 获取文档元数据失败: {meta_resp}")
+                return None
+
+            meta = {
+                "document_id": resolved_id,
+                "title": meta_resp.get("data", {}).get("document", {}).get("title", "")
+            }
+            self._doc_meta_cache[resolved_id] = meta
+            return meta
+        except Exception as e:
+            print(f"❌ 获取文档元数据异常: {e}")
+            return None
+
     def get_table_columns(self, table_id):
         """获取数据表的所有列名"""
         if not self.token and not self._get_token(): return []
@@ -178,32 +249,15 @@ class FeishuBitable:
         """获取飞书文档内容并转换为 HTML/纯文本结构"""
         if not self.token and not self._get_token():
             return None
-        
-        # 1. 如果 document_id 长度符合 Wiki ID 特征，先尝试作为 Wiki 解析
-        if len(document_id) >= 20: 
-            headers = {"Authorization": f"Bearer {self.token}"}
-            wiki_url = f"{self.base_url}/wiki/v2/spaces/get_node"
-            params = {"token": document_id}
-            try:
-                wiki_resp = requests.get(wiki_url, headers=headers, params=params).json()
-                if wiki_resp.get("code") == 0:
-                    node = wiki_resp.get("data", {}).get("node", {})
-                    if node.get("obj_type") == "docx":
-                        print(f"🔗 已成功将 Wiki 节点解析为 docx 对象: {node.get('obj_token')}")
-                        document_id = node.get("obj_token")
-            except:
-                pass
 
+        meta = self.get_docx_meta(document_id, use_cache=False)
+        if not meta:
+            return None
+
+        document_id = meta["document_id"]
+        title = meta.get("title", "")
         print(f"📥 正在从飞书文档提取内容: {document_id}")
         headers = {"Authorization": f"Bearer {self.token}"}
-        
-        # 1. 获取文档元数据（标题）
-        doc_meta_url = f"{self.base_url}/docx/v1/documents/{document_id}"
-        meta_resp = requests.get(doc_meta_url, headers=headers).json()
-        if meta_resp.get("code") != 0:
-            print(f"❌ 获取文档元数据失败: {meta_resp}")
-            return None
-        title = meta_resp["data"]["document"]["title"]
         
         # 2. 迭代获取所有块
         blocks = []
@@ -628,8 +682,113 @@ class FeishuBitable:
         """
         from bs4 import BeautifulSoup, NavigableString, Tag
         import re
+        from html import escape
 
-        soup = BeautifulSoup(html_content, 'html.parser')
+        def looks_like_markdown(text):
+            if not text:
+                return False
+            if re.search(r'</?(p|h[1-6]|div|section|img|blockquote|ul|ol|li|table|pre|code)\b', text, re.IGNORECASE):
+                return False
+            patterns = [
+                r'^\s{0,3}#{1,6}\s+',
+                r'^\s*[-*+]\s+',
+                r'^\s*\d+\.\s+',
+                r'```',
+                r'^\s*>\s+',
+                r'!\[.*?\]\(.*?\)',
+                r'\[.*?\]\(.*?\)'
+            ]
+            return any(re.search(p, text, re.MULTILINE) for p in patterns)
+
+        def simple_markdown_to_html(text):
+            def inline(md_line):
+                escaped = escape(md_line)
+                escaped = re.sub(r'!\[(.*?)\]\((.*?)\)', r'<img alt="\1" src="\2" />', escaped)
+                escaped = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', escaped)
+                escaped = re.sub(r'`([^`]+)`', r'<code>\1</code>', escaped)
+                return escaped
+
+            lines = text.splitlines()
+            html_parts = []
+            in_ul = False
+            in_ol = False
+
+            def close_lists():
+                nonlocal in_ul, in_ol
+                if in_ul:
+                    html_parts.append("</ul>")
+                    in_ul = False
+                if in_ol:
+                    html_parts.append("</ol>")
+                    in_ol = False
+
+            for raw in lines:
+                line = raw.strip()
+                if not line:
+                    close_lists()
+                    continue
+
+                if line.startswith("### "):
+                    close_lists()
+                    html_parts.append(f"<h3>{inline(line[4:])}</h3>")
+                    continue
+                if line.startswith("## "):
+                    close_lists()
+                    html_parts.append(f"<h2>{inline(line[3:])}</h2>")
+                    continue
+                if line.startswith("# "):
+                    close_lists()
+                    html_parts.append(f"<h1>{inline(line[2:])}</h1>")
+                    continue
+                if line.startswith("> "):
+                    close_lists()
+                    html_parts.append(f"<blockquote><p>{inline(line[2:])}</p></blockquote>")
+                    continue
+
+                m_ol = re.match(r'^(\d+)\.\s+(.*)$', line)
+                if m_ol:
+                    if in_ul:
+                        html_parts.append("</ul>")
+                        in_ul = False
+                    if not in_ol:
+                        html_parts.append("<ol>")
+                        in_ol = True
+                    html_parts.append(f"<li>{inline(m_ol.group(2))}</li>")
+                    continue
+
+                if re.match(r'^[-*+]\s+.+$', line):
+                    if in_ol:
+                        html_parts.append("</ol>")
+                        in_ol = False
+                    if not in_ul:
+                        html_parts.append("<ul>")
+                        in_ul = True
+                    html_parts.append(f"<li>{inline(line[2:])}</li>")
+                    continue
+
+                close_lists()
+                html_parts.append(f"<p>{inline(line)}</p>")
+
+            close_lists()
+            return "\n".join(html_parts).strip()
+
+        def normalize_input(raw):
+            txt = (raw or "").strip()
+            if not txt:
+                return ""
+            txt = re.sub(r'```(?:html|markdown)?\n?', '', txt, flags=re.IGNORECASE)
+            txt = txt.replace("```", "").strip()
+
+            if looks_like_markdown(txt):
+                try:
+                    from markdown_it import MarkdownIt
+                    md = MarkdownIt("commonmark", {"breaks": True, "linkify": True}).enable("table")
+                    return md.render(txt)
+                except Exception:
+                    return simple_markdown_to_html(txt)
+            return txt
+
+        soup = BeautifulSoup(normalize_input(html_content), 'html.parser')
         blocks = []
         seen = set()         # 已处理节点的 id(tag)
         seen_text = set()    # 已添加文本的 hash
@@ -695,6 +854,18 @@ class FeishuBitable:
                 if h in seen_text:
                     continue
                 seen_text.add(h)
+                if re.match(r'^#{1,6}\s+', line):
+                    title = re.sub(r'^#{1,6}\s+', '', line).strip()
+                    if title:
+                        blocks.append({"block_type": 4, "heading2": {
+                            "elements": [{"text_run": {"content": title}}]
+                        }})
+                    continue
+                if re.match(r'^(?:\d+[.、]|[一二三四五六七八九十]+[、.．])\s*', line) and len(line) <= 42:
+                    blocks.append({"block_type": 4, "heading2": {
+                        "elements": [{"text_run": {"content": line}}]
+                    }})
+                    continue
                 if bold and len(line) <= 40:
                     blocks.append({"block_type": 4, "heading2": {
                         "elements": [{"text_run": {"content": line}}]
@@ -800,6 +971,18 @@ class FeishuBitable:
                     blocks.append({"block_type": bt, key: {"elements": [{"text_run": {"content": txt}}]}})
                 return
 
+            # ── 列表项（保持结构） ─────────────────────────────────────────
+            if name == 'li':
+                txt = tag.get_text(" ", strip=True)
+                if txt:
+                    seen.add(id(tag))
+                    parent_name = tag.parent.name if tag.parent else ""
+                    if parent_name == "ol":
+                        blocks.append({"block_type": 13, "ordered": {"elements": [{"text_run": {"content": txt}}]}})
+                    else:
+                        blocks.append({"block_type": 12, "bullet": {"elements": [{"text_run": {"content": txt}}]}})
+                return
+
             # ── 特殊容器与引言 (Callout / Blocks) ──────────────────────────
             if name in ('p', 'div', 'section', 'li', 'blockquote', 'article'):
                 cls = str(tag.get('class', '')).lower()
@@ -842,10 +1025,15 @@ class FeishuBitable:
                     for child in tag.children:
                         collect(child)
                 else:
-                    runs = get_text_runs(tag)
-                    if runs:
+                    plain = tag.get_text("\n", strip=True)
+                    if plain:
                         seen.add(id(tag))
-                        blocks.append({"block_type": 2, "text": {"elements": runs}})
+                        add_para(plain, bold=False)
+                    else:
+                        runs = get_text_runs(tag)
+                        if runs:
+                            seen.add(id(tag))
+                            blocks.append({"block_type": 2, "text": {"elements": runs}})
                 return
 
             # ── 其他节点：继续递归 ──────────────────────────────────────────
@@ -992,16 +1180,76 @@ class FeishuBitable:
                     return table.get("table_id")
         return None
 
-    def create_field(self, table_id, field_name, field_type=17):
-        """在多维表格中创建新字段"""
-        if not self.token and not self._get_token(): return False
-        url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables/{table_id}/fields"
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
-        payload = {"field_name": field_name, "type": field_type}
+    def create_table(self, table_name):
+        """创建数据表并返回 table_id；已存在时返回已有 table_id。"""
+        if not self.token and not self._get_token():
+            return None
+        url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+        payload = {"table": {"name": table_name}}
         try:
             resp = requests.post(url, headers=headers, json=payload).json()
-            return resp.get("code") == 0
-        except: return False
+            if resp.get("code") == 0:
+                return resp.get("data", {}).get("table_id")
+            if resp.get("code") in (1254302, 1254013):
+                return self.get_table_id_by_name(table_name)
+            print(f"❌ 创建表格失败: {resp}")
+        except Exception as e:
+            print(f"❌ 创建表格异常: {e}")
+        return None
+
+    def list_fields(self, table_id):
+        """获取数据表字段详情列表。"""
+        if not self.token and not self._get_token():
+            return []
+        url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables/{table_id}/fields"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        try:
+            resp = requests.get(url, headers=headers).json()
+            if resp.get("code") == 0:
+                return resp.get("data", {}).get("items", [])
+            print(f"❌ 获取字段列表失败: {resp}")
+        except Exception as e:
+            print(f"❌ 获取字段列表异常: {e}")
+        return []
+
+    def delete_field(self, table_id, field_id):
+        """删除指定字段。"""
+        if not self.token and not self._get_token():
+            return False
+        url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables/{table_id}/fields/{field_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        try:
+            resp = requests.delete(url, headers=headers).json()
+            if resp.get("code") == 0:
+                return True
+            print(f"❌ 删除字段失败: {resp}")
+        except Exception as e:
+            print(f"❌ 删除字段异常: {e}")
+        return False
+
+    def create_field(self, table_id, field_name, field_type=17, field_property=None):
+        """在多维表格中创建新字段（支持附加字段属性）。"""
+        if not self.token and not self._get_token():
+            return False
+        url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables/{table_id}/fields"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+        payload = {"field_name": field_name, "type": field_type}
+        if field_property:
+            payload["property"] = field_property
+        try:
+            resp = requests.post(url, headers=headers, json=payload).json()
+            # 1254302: 字段已存在
+            return resp.get("code") in (0, 1254302)
+        except Exception as e:
+            print(f"❌ 创建字段异常: {e}")
+            return False
 
     def create_folder(self, folder_name, parent_folder_token=None):
         """在飞书云盘创建文件夹，并返回 folder_token"""

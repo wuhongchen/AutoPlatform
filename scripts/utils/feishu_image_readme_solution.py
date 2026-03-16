@@ -5,11 +5,14 @@ import os
 import time
 import subprocess
 
-# 飞书凭证
-APP_ID = "cli_a85b1afbbcb99013"
-APP_SECRET = "WJ7zZacqrSqUM6HpIpE0BegKJVmDbeN6"
+# 飞书凭证（从环境变量读取）
+APP_ID = os.getenv("FEISHU_APP_ID", "")
+APP_SECRET = os.getenv("FEISHU_APP_SECRET", "")
 
 def get_tenant_access_token():
+    if not APP_ID or not APP_SECRET:
+        print("❌ 缺少 FEISHU_APP_ID / FEISHU_APP_SECRET")
+        return None
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     payload = {"app_id": APP_ID, "app_secret": APP_SECRET}
     try:

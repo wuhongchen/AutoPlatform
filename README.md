@@ -36,6 +36,44 @@ WECHAT_SECRET=...
 LLM_API_KEY=...
 LLM_ENDPOINT=...
 
+# 阿里百炼 (OpenAI 兼容)
+BAILIAN_API_KEY=...
+BAILIAN_ENDPOINT=https://coding.dashscope.aliyuncs.com/v1
+
+# 智谱
+ZHIPU_API_KEY=...
+ZHIPU_ENDPOINT=https://open.bigmodel.cn/api/paas/v4
+
+# Kimi
+KIMI_API_KEY=...
+KIMI_ENDPOINT=https://api.moonshot.cn/v1
+
+# MiniMax
+MINIMAX_API_KEY=...
+MINIMAX_ENDPOINT=https://api.minimax.chat/v1
+
+# 流水线默认改写模型（飞书表内“改写模型”字段优先级更高）
+OPENCLAW_PIPELINE_MODEL=kimi-k2.5
+OPENCLAW_PIPELINE_ROLE=tech_expert
+OPENCLAW_PIPELINE_BATCH_SIZE=3
+
+# OpenClaw 调度优化（可选）
+OPENCLAW_SCHEMA_CHECK_ENABLED=1
+OPENCLAW_SCHEMA_CHECK_INTERVAL_SEC=21600
+OPENCLAW_AUTO_INSTALL=1
+OPENCLAW_NON_INTERACTIVE=1
+
+# 公号模板广告位（可选）
+WECHAT_AD_ENABLED=0
+WECHAT_AD_POSITION=bottom
+WECHAT_AD_TITLE=推广信息
+WECHAT_AD_TEXT=
+WECHAT_AD_LINK_TEXT=
+WECHAT_AD_LINK_URL=
+WECHAT_AD_IMAGE_PATH=
+WECHAT_AD_IMAGE_URL=
+WECHAT_AD_IMAGE_LINK_URL=
+
 # 火山引擎 (可选，用于自动生成封面图)
 VOLCENGINE_AK=...
 VOLCENGINE_SK=...
@@ -47,9 +85,34 @@ VOLCENGINE_SK=...
 ```bash
 ./run.sh "https://mp.weixin.qq.com/s/xxx"
 ```
+
+指定模型运行（第三个参数为 `model_key`）：
+```bash
+./run.sh "https://mp.weixin.qq.com/s/xxx" tech_expert "qwen3.5-plus"
+./run.sh "https://mp.weixin.qq.com/s/xxx" tech_expert "glm-5"
+./run.sh "https://mp.weixin.qq.com/s/xxx" tech_expert "kimi-k2.5"
+./run.sh "https://mp.weixin.qq.com/s/xxx" tech_expert "MiniMax-M2.5"
+```
+
+流水线模式下也可切模型：
+1. 设置环境变量 `OPENCLAW_PIPELINE_MODEL`（全局默认）
+2. 或在飞书流水线表中填写 `改写模型` 字段（单条记录优先）
+3. 默认开启“改写去重”：若记录已存在可读取的 `改后文档链接`，会跳过重复调用模型。
+如需强制重改，可设置 `OPENCLAW_FORCE_REWRITE=1`。
+4. 可设置 `OPENCLAW_PIPELINE_BATCH_SIZE` 控制单次巡检处理条数（默认 3，适合 OpenClaw 定时触发）。
+
+新版流水线节点（状态机）：
+1. `🧲 待改写`
+2. `✍️ 改写中`
+3. `🧾 待审核`
+4. `🚀 待发布`
+5. `📤 发布中`
+6. `✅ 已发布`
+7. `❌ 改写失败 / ❌ 发布失败`
+
 或者手动运行：
 ```bash
-python manager.py "https://mp.weixin.qq.com/s/xxx"
+python3 core/manager.py "https://mp.weixin.qq.com/s/xxx" tech_expert "qwen3.5-plus"
 ```
 
 ## 目录说明

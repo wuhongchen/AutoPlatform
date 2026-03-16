@@ -12,3 +12,4 @@ tmp/
 *.pyc
 .idea/
 .vscode/
+output/.schema_checked_*.stamp
