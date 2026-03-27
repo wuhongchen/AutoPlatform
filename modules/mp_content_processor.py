@@ -6,7 +6,7 @@ from config import Config
 class MPContentProcessor:
     """
     微信公众号精品内容处理器
-    基于 xhs-ai-writer v2.2 核心逻辑重构的 Python 版本
+    基于 AI writer v2.2 核心逻辑重构的 Python 版本
     核心目标：高人感、去 AI 味、爆款模式拆解
     """
     

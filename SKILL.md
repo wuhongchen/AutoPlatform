@@ -19,6 +19,96 @@ metadata: {"openclaw":{"emoji":"🚀","requires":{"python":">=3.9"}}}
 4. “修复改写失败/发布失败记录”
 5. “跑一下全流程 demo / 验证能不能打通”
 
+## 1.1) 固定场景技能包（OpenClaw 对话即执行）
+以下 4 个固定场景应被视为“可执行模型”，当用户对话命中触发词时，直接执行对应命令。
+
+### Scenario S1: 灵感库扫描与评估
+触发词示例：
+1. “扫描灵感库”
+2. “分析选题”
+3. “看看最近有什么可写”
+
+执行命令：
+```bash
+python3 core/manager_inspiration.py
+```
+
+成功判据：
+1. 日志出现灵感记录处理信息
+2. 飞书灵感库记录状态发生更新（如 `待审/已跳过/已采用`）
+
+### Scenario S2: 内容流水线改写与发布
+触发词示例：
+1. “跑流水线”
+2. “自动发布待发布队列”
+3. “执行一次发布巡检”
+
+执行命令（推荐单次）：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 OPENCLAW_PIPELINE_BATCH_SIZE=3 ./run.sh pipeline-once
+```
+
+执行命令（持续监听，仅用户明确要求）：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh pipeline
+```
+
+成功判据：
+1. 日志出现改写/发布节点推进
+2. 飞书流水线状态推进到 `🧾 待审核/🚀 待发布/✅ 已发布`
+
+### Scenario S3: 单篇文章即时处理
+触发词示例：
+1. “处理这篇文章：<URL>”
+2. “马上改写并发布这条链接”
+3. “单篇测试这条公众号”
+
+执行命令：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh "<URL>" "tech_expert" "auto"
+```
+
+成功判据：
+1. 生成改后文档链接（飞书 docx）
+2. 发布模式下可获得草稿 ID 或明确失败原因备注
+
+### Scenario S4: 全流程定时执行
+触发词示例：
+1. “定时跑全流程”
+2. “每隔一段时间巡检并发布”
+3. “做成无人值守执行”
+
+执行模型：
+1. 调度器固定触发 `pipeline-once`（推荐）
+2. 每次触发命令如下：
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 OPENCLAW_PIPELINE_BATCH_SIZE=3 ./run.sh pipeline-once
+```
+
+说明：
+1. 不推荐默认常驻 `pipeline`，优先由 OpenClaw/外部定时器周期触发 `pipeline-once`
+2. 可通过 `OPENCLAW_PIPELINE_BATCH_SIZE` 控制每轮吞吐，避免超时
+
+技能能力描述（补充）：
+1. 负责编排“采集 -> 分析 -> 飞书回写 -> 流水线改写 -> 发布”的全链路动作。
+2. 支持 OpenClaw 代理与独立模型双模式运行，并可按记录粒度覆盖改写模型。
+3. 支持封面生图双路由（方舟优先 + 即梦回退），避免单供应商不可用导致流程中断。
+4. 支持失败记录修复、状态回滚重试与关键字段自检，适合无人值守定时调度。
+
+输入/输出约定（给 OpenClaw 调度器）：
+1. 典型输入：公众号 URL、动作类型（scan/pipeline/demo）、可选角色和模型 key。
+2. 典型输出：飞书灵感记录 ID、流水线记录 ID、改后文档链接、发布草稿 ID/失败原因。
+3. 默认成功判据：日志出现 `✅ 新建灵感记录`、`✅ 新建流水线记录`、`✅ 改写完成`（发布模式再加 `✅ 发布完成`）。
+4. 默认失败判据：状态进入 `❌ 改写失败/❌ 发布失败`，并回写 `备注` 字段说明异常原因。
+
+关键模块映射（补充）：
+1. 流水线总控：`core/manager.py`
+2. 灵感扫描总控：`core/manager_inspiration.py`
+3. 飞书读写与文档/附件处理：`modules/feishu.py`
+4. 改写与生图路由：`modules/processor.py`
+5. 公众号正文结构化处理：`modules/mp_processor.py`
+6. 专题内容处理器：`modules/mp_content_processor.py`（已替代旧命名 `xhs_processor.py`）
+
 ## 2) OpenClaw 调用总原则
 1. 默认优先单次巡检：`pipeline-once`，不要默认起常驻进程。
 2. 默认非交互调用：设置 `OPENCLAW_NON_INTERACTIVE=1`。
@@ -83,14 +173,27 @@ python3 core/manager.py "<URL>" "tech_expert" "auto"
 ### Action F: 全流程 Demo（从 URL 到流水线执行）
 适用：用户要快速验证“完整链路是否能跑起来”。
 
-执行命令：
+执行命令（联调模式，推荐先跑）：
 ```bash
 python3 scripts/internal/demo_full_flow.py --url "<URL>" --skip-publish
 ```
 
-说明：
+执行命令（正式模式，包含发布）：
+```bash
+python3 scripts/internal/demo_full_flow.py --url "<URL>"
+```
+
+结果判定（关键日志）：
+1. 灵感库写入成功：`✅ 新建灵感记录: rec...`
+2. 流水线写入成功：`✅ 新建流水线记录: rec...`
+3. 改写执行成功：`✅ 改写完成`
+4. 发布执行成功（正式模式）：`✅ 发布完成`
+
+失败处置：
 1. 首次联调推荐先加 `--skip-publish`，先验证抓取、改写、飞书回写。
 2. 去掉 `--skip-publish` 后可走发布链路（需微信白名单 IP 与公众号权限就绪）。
+3. 若发布失败，优先检查公众号 IP 白名单与 `WECHAT_APPID/WECHAT_SECRET`。
+4. 若模型调用失败，先执行 `python3 scripts/internal/check_env.py` 查看模型路由与 key 状态。
 
 ### Action G: 单点链路验证（抓取 -> 飞书文档 -> Bitable 附件）
 适用：用户要定位素材转存问题，但不想跑完整流水线。
