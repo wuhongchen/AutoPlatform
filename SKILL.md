@@ -71,12 +71,12 @@ OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh pipeline
 
 执行命令：
 ```bash
-OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh "<URL>" "tech_expert" "kimi-k2.5"
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh "<URL>" "tech_expert" "auto"
 ```
 
 也可直接：
 ```bash
-python3 core/manager.py "<URL>" "tech_expert" "kimi-k2.5"
+python3 core/manager.py "<URL>" "tech_expert" "auto"
 ```
 
 ## 4) 模型与参数约定
@@ -84,18 +84,26 @@ python3 core/manager.py "<URL>" "tech_expert" "kimi-k2.5"
 1. CLI 第三个参数（单篇模式）
 2. 飞书记录字段 `改写模型`（流水线单条）
 3. 环境变量 `OPENCLAW_PIPELINE_MODEL`（流水线默认）
-4. 兜底模型
+4. 自动模型路由（`OPENCLAW_MODEL_PROVIDER`）
+5. 兜底模型
 
 常用可选模型 key：
-1. `kimi-k2.5`
-2. `qwen3.5-plus`
-3. `qwen3-max-2026-01-23`
-4. `qwen3-coder-next`
-5. `qwen3-coder-plus`
-6. `glm-5`
-7. `glm-4.7`
-8. `MiniMax-M2.5`
-9. `volcengine`
+1. `auto`（推荐：优先 OpenClaw 代理，无则回退独立模型）
+2. `openclaw`（强制走 OpenClaw 代理）
+3. `kimi-k2.5`
+4. `qwen3.5-plus`
+5. `qwen3-max-2026-01-23`
+6. `qwen3-coder-next`
+7. `qwen3-coder-plus`
+8. `glm-5`
+9. `glm-4.7`
+10. `MiniMax-M2.5`
+11. `volcengine`
+
+OpenClaw 代理读取规则（无需额外改代码）：
+1. 端点优先读取：`OPENCLAW_PROXY_ENDPOINT` / `OPENCLAW_LLM_ENDPOINT` / `OPENAI_BASE_URL`
+2. Key 优先读取：`OPENCLAW_PROXY_API_KEY` / `OPENCLAW_LLM_API_KEY` / `OPENAI_API_KEY`
+3. 模型优先读取：`OPENCLAW_PROXY_MODEL` / `OPENCLAW_LLM_MODEL` / `OPENAI_MODEL`
 
 角色字段：
 1. `改写角色`（飞书字段）
@@ -128,6 +136,8 @@ python3 core/manager.py "<URL>" "tech_expert" "kimi-k2.5"
    - 执行：`python3 -m pip install -r requirements.txt`
 2. `Missing environment variables` 或鉴权失败
    - 检查并补全 `.env`：`FEISHU_*`, `WECHAT_*`, `LLM/模型相关 key`
+   - 微信公众号 `AppID/AppSecret` 获取入口：`https://developers.weixin.qq.com/platform`
+   - 必填项：`WECHAT_APPID=...`、`WECHAT_SECRET=...`
 3. `document_id max len is 27` / 无法解析 doc token
    - 优先检查飞书字段 `改后文档链接` 是否为 `https://www.feishu.cn/docx/...`
    - 必要时执行修复脚本：
@@ -142,10 +152,17 @@ python3 scripts/internal/repair_failed_records.py
 OPENCLAW_NON_INTERACTIVE=1
 OPENCLAW_AUTO_INSTALL=0
 OPENCLAW_PIPELINE_BATCH_SIZE=3
-OPENCLAW_PIPELINE_MODEL=kimi-k2.5
+OPENCLAW_MODEL_PROVIDER=auto
+OPENCLAW_PIPELINE_MODEL=auto
 OPENCLAW_PIPELINE_ROLE=tech_expert
 OPENCLAW_SCHEMA_CHECK_ENABLED=1
 OPENCLAW_SCHEMA_CHECK_INTERVAL_SEC=21600
+```
+
+独立模型模式（不走 OpenClaw 代理）可选补充：
+```bash
+OPENCLAW_MODEL_PROVIDER=independent
+OPENCLAW_INDEPENDENT_MODEL=kimi-k2.5
 ```
 
 ## 9) 执行边界

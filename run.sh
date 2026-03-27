@@ -11,6 +11,29 @@ echo -e "${BLUE}=======================================${NC}"
 echo -e "${BLUE}   🚀 OpenClaw 全自动运营发布工具      ${NC}"
 echo -e "${BLUE}=======================================${NC}"
 
+pick_env_file() {
+    if [ -f ".env" ]; then
+        echo ".env"
+        return
+    fi
+    if [ -f "../mp-draft-push/.env" ]; then
+        echo "../mp-draft-push/.env"
+        return
+    fi
+    echo ""
+}
+
+has_config_key() {
+    local key="$1"
+    if [ -n "${!key}" ]; then
+        return 0
+    fi
+    if [ -n "${ENV_FILE}" ] && grep -Eq "^[[:space:]]*${key}[[:space:]]*=[[:space:]]*[^[:space:]#]+" "${ENV_FILE}"; then
+        return 0
+    fi
+    return 1
+}
+
 calc_requirements_hash() {
     if command -v shasum >/dev/null 2>&1; then
         shasum -a 256 requirements.txt | awk '{print $1}'
@@ -23,8 +46,19 @@ calc_requirements_hash() {
 }
 
 # 1. 检查环境变量
-if [ ! -f ".env" ] && [ ! -f "../mp-draft-push/.env" ]; then
-    echo -e "${YELLOW}⚠️  警告: 未找到 .env 配置文件，请先配置 AppID 和 Secret。${NC}"
+ENV_FILE="$(pick_env_file)"
+WECHAT_CONSOLE_URL="https://developers.weixin.qq.com/platform"
+
+if [ -z "${ENV_FILE}" ]; then
+    echo -e "${YELLOW}⚠️  警告: 未找到 .env 配置文件，请先配置微信公众号参数。${NC}"
+    echo -e "${YELLOW}🔗 参数获取入口: ${WECHAT_CONSOLE_URL}${NC}"
+    echo -e "${YELLOW}📌 请在 .env 中设置: WECHAT_APPID=... 和 WECHAT_SECRET=...${NC}"
+else
+    if ! has_config_key "WECHAT_APPID" || ! has_config_key "WECHAT_SECRET"; then
+        echo -e "${YELLOW}⚠️  检测到微信公众号参数未完整配置。${NC}"
+        echo -e "${YELLOW}🔗 参数获取入口: ${WECHAT_CONSOLE_URL}${NC}"
+        echo -e "${YELLOW}📌 请在 ${ENV_FILE} 中补全 WECHAT_APPID 和 WECHAT_SECRET。${NC}"
+    fi
 fi
 
 # 2. 依赖检查（OpenClaw 调用优化：requirements 不变时跳过安装）
@@ -77,8 +111,8 @@ if [ "$ARTICLE_URL" = "pipeline" ] || [ "$ARTICLE_URL" = "pipeline-once" ]; then
     echo -e "${BLUE}🧵 流水线模式: ${ARTICLE_URL}${NC}"
     python3 core/manager.py "$ARTICLE_URL"
 else
-    echo -e "${BLUE}🎭 角色: ${ROLE:-${OPENCLAW_ROLE:-tech_expert}} | 🧠 模型: ${MODEL:-${OPENCLAW_MODEL:-volcengine}}${NC}"
-    python3 core/manager.py "$ARTICLE_URL" "${ROLE:-${OPENCLAW_ROLE:-tech_expert}}" "${MODEL:-${OPENCLAW_MODEL:-volcengine}}"
+    echo -e "${BLUE}🎭 角色: ${ROLE:-${OPENCLAW_ROLE:-tech_expert}} | 🧠 模型: ${MODEL:-${OPENCLAW_MODEL:-auto}}${NC}"
+    python3 core/manager.py "$ARTICLE_URL" "${ROLE:-${OPENCLAW_ROLE:-tech_expert}}" "${MODEL:-${OPENCLAW_MODEL:-auto}}"
 fi
 
 if [ $? -eq 0 ]; then

@@ -4,6 +4,14 @@ from dotenv import load_dotenv
 # 确保加载环境变量
 load_dotenv()
 
+def _first_non_empty(*keys):
+    """从多个环境变量中取第一个非空值。"""
+    for key in keys:
+        val = (os.getenv(key) or "").strip()
+        if val:
+            return val
+    return ""
+
 def _normalize_chat_endpoint(endpoint, default_base):
     """将 base URL 或 completions URL 统一为 chat/completions endpoint。"""
     raw = (endpoint or default_base or "").strip()
@@ -35,8 +43,19 @@ MINIMAX_ENDPOINT = _normalize_chat_endpoint(
     "https://api.minimax.chat/v1"
 )
 OPENAI_ENDPOINT = _normalize_chat_endpoint(
-    os.getenv("LLM_ENDPOINT"),
+    _first_non_empty("LLM_ENDPOINT", "OPENAI_BASE_URL", "OPENAI_API_BASE"),
     "https://api.openai.com/v1"
+)
+OPENCLAW_PROXY_ENDPOINT = _normalize_chat_endpoint(
+    _first_non_empty(
+        "OPENCLAW_PROXY_ENDPOINT",
+        "OPENCLAW_LLM_ENDPOINT",
+        "OPENCLAW_CHAT_ENDPOINT",
+        "OPENCLAW_BASE_URL",
+        "OPENAI_BASE_URL",
+        "OPENAI_API_BASE",
+    ),
+    ""
 )
 
 # 统一 key
@@ -45,10 +64,53 @@ VOLC_API_KEY = (os.getenv("VOLC_ARK_API_KEY") or os.getenv("LLM_API_KEY") or "")
 BAILIAN_API_KEY = (os.getenv("BAILIAN_API_KEY") or "").strip()
 ZHIPU_API_KEY = (os.getenv("ZHIPU_API_KEY") or "").strip()
 MINIMAX_API_KEY = (os.getenv("MINIMAX_API_KEY") or "").strip()
-OPENAI_API_KEY = (os.getenv("LLM_API_KEY") or "").strip()
+OPENAI_API_KEY = _first_non_empty("LLM_API_KEY", "OPENAI_API_KEY")
+OPENCLAW_PROXY_API_KEY = _first_non_empty("OPENCLAW_PROXY_API_KEY", "OPENCLAW_LLM_API_KEY", "OPENAI_API_KEY")
+OPENCLAW_PROXY_MODEL = _first_non_empty(
+    "OPENCLAW_PROXY_MODEL",
+    "OPENCLAW_LLM_MODEL",
+    "OPENAI_MODEL",
+    "LLM_MODEL",
+    "OPENCLAW_MODEL_NAME",
+) or "gpt-4o-mini"
+
+def has_openclaw_proxy_config():
+    return bool(OPENCLAW_PROXY_ENDPOINT and OPENCLAW_PROXY_API_KEY)
+
+def get_runtime_default_model_key():
+    """
+    运行时默认模型选择：
+    1) OPENCLAW_DEFAULT_MODEL（显式指定，且在模型池中）
+    2) OPENCLAW_MODEL_PROVIDER=openclaw|independent|auto（默认 auto）
+    3) auto 模式：若检测到 OpenClaw 代理配置则用 openclaw，否则回退独立模型
+    """
+    provider_mode = (_first_non_empty("OPENCLAW_MODEL_PROVIDER", "OPENCLAW_MODEL_SOURCE") or "auto").lower()
+    explicit_default = _first_non_empty("OPENCLAW_DEFAULT_MODEL")
+    independent_default = _first_non_empty("OPENCLAW_INDEPENDENT_MODEL") or "kimi-k2.5"
+    if independent_default not in MODEL_POOL:
+        independent_default = "volcengine"
+
+    if explicit_default and explicit_default in MODEL_POOL:
+        return explicit_default
+
+    if provider_mode == "openclaw":
+        return "openclaw" if has_openclaw_proxy_config() else independent_default
+    if provider_mode == "independent":
+        return independent_default
+
+    # auto
+    if has_openclaw_proxy_config():
+        return "openclaw"
+    return independent_default
 
 # 模型池配置
 MODEL_POOL = {
+    "openclaw": {
+        "name": "OpenClaw Proxy",
+        "api_key": OPENCLAW_PROXY_API_KEY,
+        "endpoint": OPENCLAW_PROXY_ENDPOINT,
+        "model": OPENCLAW_PROXY_MODEL
+    },
     "kimi": {
         "name": "Moonshot KIMI",
         "api_key": KIMI_API_KEY,
@@ -143,4 +205,4 @@ MODEL_POOL = {
     }
 }
 
-DEFAULT_MODEL = "volcengine"
+DEFAULT_MODEL = get_runtime_default_model_key()

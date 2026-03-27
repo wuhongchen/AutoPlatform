@@ -12,7 +12,7 @@ from modules.xhs_processor import MPContentProcessor
 from modules.mp_processor import DeepMPProcessor
 from modules.discovery import DiscoverProcessor, ContentSearchAgent
 from modules.publisher import WeChatPublisher
-from modules.models import MODEL_POOL
+from modules.models import MODEL_POOL, get_runtime_default_model_key
 from modules.state_machine import PipelineState, canonical_pipeline_status, is_rewrite_stage, is_publish_stage
 from config import Config
 
@@ -180,6 +180,8 @@ class AutoPlatformManager:
     def _normalize_model_key(self, raw_key):
         """标准化 model_key，支持别名。"""
         key = self._field_to_text(raw_key).strip()
+        if not key or key.lower() in {"auto", "default"}:
+            key = get_runtime_default_model_key()
         if not key:
             return ""
         if key in MODEL_POOL:
@@ -201,6 +203,8 @@ class AutoPlatformManager:
             "glm": "glm-5",
             "minimax": "MiniMax-M2.5",
             "m2.5": "MiniMax-M2.5",
+            "openclawproxy": "openclaw",
+            "openclaw_proxy": "openclaw",
         }
         mapped = alias.get(low, "")
         if mapped in MODEL_POOL:
@@ -214,12 +218,14 @@ class AutoPlatformManager:
         if not role_key:
             role_key = "tech_expert"
 
-        default_model = os.getenv("OPENCLAW_PIPELINE_MODEL", "kimi-k2.5")
+        default_model = (os.getenv("OPENCLAW_PIPELINE_MODEL") or "").strip()
+        if not default_model:
+            default_model = get_runtime_default_model_key()
         model_key = self._normalize_model_key(fields.get("改写模型"))
         if not model_key:
             model_key = self._normalize_model_key(default_model)
         if not model_key:
-            model_key = "volcengine"
+            model_key = get_runtime_default_model_key()
 
         return role_key, model_key
 
@@ -497,8 +503,9 @@ class AutoPlatformManager:
                 "draft_id": draft_id
             }, source_record_id=record_id)
 
-    def run_with_params(self, url, role_key="tech_expert", model_key="volcengine"):
+    def run_with_params(self, url, role_key="tech_expert", model_key="auto"):
         """手动运行单篇文章的全流程"""
+        resolved_model = self._normalize_model_key(model_key) or get_runtime_default_model_key()
         # 1. 采集
         article_data = self.step_collect(url)
         if not article_data:
@@ -506,7 +513,7 @@ class AutoPlatformManager:
             return
         
         # 2. 改写
-        rewritten = self.step_rewrite(article_data, role_key, model_key)
+        rewritten = self.step_rewrite(article_data, role_key, resolved_model)
         if not rewritten:
             print("❌ AI 改写流程中断。")
             return
@@ -609,5 +616,5 @@ if __name__ == "__main__":
     else:
         # 单篇模式参数优先级：CLI > OPENCLAW_* 环境变量 > 默认值
         role = sys.argv[2] if len(sys.argv) > 2 else os.getenv("OPENCLAW_ROLE", "tech_expert")
-        model = sys.argv[3] if len(sys.argv) > 3 else os.getenv("OPENCLAW_MODEL", "volcengine")
+        model = sys.argv[3] if len(sys.argv) > 3 else os.getenv("OPENCLAW_MODEL", "auto")
         manager.run_with_params(cmd, role, model)

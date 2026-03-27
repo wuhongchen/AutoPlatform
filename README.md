@@ -27,6 +27,13 @@ pip install -r requirements.txt
 
 在当前目录或 `mp-draft-push` 目录下的 `.env` 文件中配置以下密钥：
 
+微信公众号参数获取入口：`https://developers.weixin.qq.com/platform`
+
+获取与填写步骤（2 分钟）：
+1. 打开上面的微信开放平台链接并登录公众号主体账号。
+2. 在平台控制台找到公众号应用的 `AppID` 和 `AppSecret`。
+3. 回到项目 `.env`，填入 `WECHAT_APPID` 与 `WECHAT_SECRET` 后保存。
+
 ```bash
 # 微信公众号 (必须)
 WECHAT_APPID=...

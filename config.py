@@ -47,10 +47,15 @@ class Config:
     def check_keys(cls):
         """检查必要密钥是否完整"""
         missing = []
+        openclaw_proxy_key = (
+            os.getenv("OPENCLAW_PROXY_API_KEY")
+            or os.getenv("OPENCLAW_LLM_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
         if not cls.WECHAT_APPID or not cls.WECHAT_SECRET:
             missing.append("WECHAT_APPID/SECRET")
-        if not cls.LLM_API_KEY:
-            missing.append("LLM_API_KEY (用于 AI 改写)")
+        if not cls.LLM_API_KEY and not openclaw_proxy_key:
+            missing.append("LLM_API_KEY 或 OPENCLAW_PROXY_API_KEY (用于 AI 改写)")
         if not cls.VOLCENGINE_AK or not cls.VOLCENGINE_SK:
             missing.append("VOLCENGINE AK/SK (用于封面生成)")
         return missing
