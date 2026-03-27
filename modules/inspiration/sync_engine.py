@@ -68,9 +68,14 @@ class InspirationSyncEngine:
         if existing_cols:
             pipeline_data = {k: v for k, v in pipeline_data.items() if k in existing_cols}
         
-        # 1. 写入流水线库
-        res = self.feishu.add_records(self.pipeline_table_id, [pipeline_data])
-        if res:
+        # 1. 写入流水线库（返回 record_id，便于上游精确追踪）
+        create_result = self.feishu.add_records_with_result(self.pipeline_table_id, [pipeline_data])
+        if create_result.get("ok"):
+            records = create_result.get("records") or []
+            created_record_id = ""
+            if records and isinstance(records[0], dict):
+                created_record_id = records[0].get("record_id", "")
+
             # 2. 更新灵感库状态为“已采用”，防止重复同步
             update_fields = {
                 "处理状态": "已采用",
@@ -78,5 +83,5 @@ class InspirationSyncEngine:
             }
             self.feishu.update_record(self.inspiration_table_id, record_id, update_fields)
             print(f"✅ [同步] 成功同步至流水线库。")
-            return True
+            return created_record_id or True
         return False

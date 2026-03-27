@@ -80,17 +80,18 @@ def main():
     print(f"灵感库表: {inspiration_table_id}")
     print(f"流水线表: {pipeline_table_id}")
 
-    before_inspiration_ids = find_record_ids_by_url(feishu, inspiration_table_id, url)
-    ok = feishu.add_record(inspiration_table_id, {"文章 URL": url, "处理状态": "待分析"})
-    if not ok:
-        raise SystemExit("❌ 写入灵感库失败")
+    create_result = feishu.add_record_with_result(inspiration_table_id, {"文章 URL": url})
+    if not create_result.get("ok"):
+        raise SystemExit(f"❌ 写入灵感库失败: {create_result.get('raw')}")
 
-    time.sleep(1)
-    after_inspiration_ids = find_record_ids_by_url(feishu, inspiration_table_id, url)
-    new_inspiration_ids = sorted(list(after_inspiration_ids - before_inspiration_ids))
-    if not new_inspiration_ids:
-        raise SystemExit("❌ 未找到新创建的灵感记录")
-    inspiration_record_id = new_inspiration_ids[-1]
+    inspiration_record_id = create_result.get("record_id", "").strip()
+    if not inspiration_record_id:
+        # 兼容极端场景：接口未返回 records，退回 URL 查找
+        time.sleep(1)
+        matched_ids = sorted(list(find_record_ids_by_url(feishu, inspiration_table_id, url)))
+        if not matched_ids:
+            raise SystemExit("❌ 已提交写入，但未定位到新建灵感记录")
+        inspiration_record_id = matched_ids[-1]
     print(f"✅ 新建灵感记录: {inspiration_record_id}")
 
     print("\n--- 阶段 1：灵感分析与原文文档生成 ---")
@@ -101,17 +102,18 @@ def main():
     feishu.update_record(inspiration_table_id, inspiration_record_id, {"处理状态": "已同步"})
     fields["处理状态"] = "已同步"
 
-    before_pipeline_ids = list_record_ids(feishu, pipeline_table_id)
     synced = inspiration_mgr.sync_engine.sync_to_pipeline(inspiration_record_id, fields)
     if not synced:
         raise SystemExit("❌ 灵感同步到流水线失败")
 
-    time.sleep(1)
-    after_pipeline_ids = list_record_ids(feishu, pipeline_table_id)
-    new_pipeline_ids = sorted(list(after_pipeline_ids - before_pipeline_ids))
-    if not new_pipeline_ids:
-        raise SystemExit("❌ 未找到新创建的流水线记录")
-    pipeline_record_id = new_pipeline_ids[-1]
+    pipeline_record_id = synced if isinstance(synced, str) else ""
+    if not pipeline_record_id:
+        # 兼容旧逻辑返回布尔值时的兜底查找
+        time.sleep(1)
+        after_pipeline_ids = list_record_ids(feishu, pipeline_table_id)
+        if not after_pipeline_ids:
+            raise SystemExit("❌ 同步成功，但未获取到流水线记录列表")
+        pipeline_record_id = sorted(list(after_pipeline_ids))[-1]
     print(f"✅ 新建流水线记录: {pipeline_record_id}")
 
     print("\n--- 阶段 3：执行改写 ---")

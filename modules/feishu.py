@@ -87,12 +87,30 @@ class FeishuBitable:
 
     def add_record(self, table_id, fields):
         """向指定数据表添加一条记录"""
-        return self.add_records(table_id, [fields])
+        result = self.add_record_with_result(table_id, fields)
+        return bool(result.get("ok"))
 
     def add_records(self, table_id, records_fields_list):
         """批量向指定数据表添加记录 (优化 Bitable 性能)"""
+        result = self.add_records_with_result(table_id, records_fields_list)
+        return bool(result.get("ok"))
+
+    def add_record_with_result(self, table_id, fields):
+        """添加单条记录并返回详情（含 record_id）"""
+        result = self.add_records_with_result(table_id, [fields])
+        records = result.get("records") or []
+        first = records[0] if records else {}
+        return {
+            "ok": bool(result.get("ok")),
+            "record_id": first.get("record_id", ""),
+            "record": first,
+            "raw": result.get("raw", {}),
+        }
+
+    def add_records_with_result(self, table_id, records_fields_list):
+        """批量添加记录并返回原始响应与 records 列表"""
         if not self.token and not self._get_token():
-            return False
+            return {"ok": False, "records": [], "raw": {"msg": "token missing"}}
             
         url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables/{table_id}/records/batch_create"
         headers = {
@@ -108,11 +126,13 @@ class FeishuBitable:
             resp = requests.post(url, headers=headers, json=payload).json()
             if resp.get("code") == 0:
                 print(f"✅ 成功批量添加 {len(records)} 条记录")
-                return True
+                created = resp.get("data", {}).get("records", []) or []
+                return {"ok": True, "records": created, "raw": resp}
             print(f"❌ 批量添加记录失败: {resp}")
+            return {"ok": False, "records": [], "raw": resp}
         except Exception as e:
             print(f"❌ 批量添加记录异常: {e}")
-        return False
+            return {"ok": False, "records": [], "raw": {"error": str(e)}}
 
     def update_record(self, table_id, record_id, fields):
         """更新指定数据表的记录"""
