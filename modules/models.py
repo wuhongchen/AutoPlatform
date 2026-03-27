@@ -51,6 +51,7 @@ OPENCLAW_PROXY_ENDPOINT = _normalize_chat_endpoint(
         "OPENCLAW_PROXY_ENDPOINT",
         "OPENCLAW_LLM_ENDPOINT",
         "OPENCLAW_CHAT_ENDPOINT",
+        "OPENCLAW_ENDPOINT",
         "OPENCLAW_BASE_URL",
         "OPENAI_BASE_URL",
         "OPENAI_API_BASE",
@@ -65,10 +66,16 @@ BAILIAN_API_KEY = (os.getenv("BAILIAN_API_KEY") or "").strip()
 ZHIPU_API_KEY = (os.getenv("ZHIPU_API_KEY") or "").strip()
 MINIMAX_API_KEY = (os.getenv("MINIMAX_API_KEY") or "").strip()
 OPENAI_API_KEY = _first_non_empty("LLM_API_KEY", "OPENAI_API_KEY")
-OPENCLAW_PROXY_API_KEY = _first_non_empty("OPENCLAW_PROXY_API_KEY", "OPENCLAW_LLM_API_KEY", "OPENAI_API_KEY")
+OPENCLAW_PROXY_API_KEY = _first_non_empty(
+    "OPENCLAW_PROXY_API_KEY",
+    "OPENCLAW_LLM_API_KEY",
+    "OPENCLAW_API_KEY",
+    "OPENAI_API_KEY",
+)
 OPENCLAW_PROXY_MODEL = _first_non_empty(
     "OPENCLAW_PROXY_MODEL",
     "OPENCLAW_LLM_MODEL",
+    "OPENCLAW_MODEL",
     "OPENAI_MODEL",
     "LLM_MODEL",
     "OPENCLAW_MODEL_NAME",

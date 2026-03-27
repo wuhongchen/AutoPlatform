@@ -34,6 +34,16 @@ has_config_key() {
     return 1
 }
 
+has_any_config_key() {
+    local key
+    for key in "$@"; do
+        if has_config_key "$key"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 calc_requirements_hash() {
     if command -v shasum >/dev/null 2>&1; then
         shasum -a 256 requirements.txt | awk '{print $1}'
@@ -90,6 +100,8 @@ fi
 ARTICLE_URL=$1
 ROLE=$2
 MODEL=$3
+MODEL_EFFECTIVE="${MODEL:-${OPENCLAW_MODEL:-auto}}"
+ROLE_EFFECTIVE="${ROLE:-${OPENCLAW_ROLE:-tech_expert}}"
 
 if [ -z "$ARTICLE_URL" ]; then
     if [ "${OPENCLAW_NON_INTERACTIVE:-0}" = "1" ]; then
@@ -105,14 +117,22 @@ if [ -z "$ARTICLE_URL" ]; then
     exit 1
 fi
 
+if [ "${MODEL_EFFECTIVE}" = "auto" ] || [ "${MODEL_EFFECTIVE}" = "openclaw" ]; then
+    if ! has_any_config_key "OPENCLAW_PROXY_ENDPOINT" "OPENCLAW_LLM_ENDPOINT" "OPENCLAW_CHAT_ENDPOINT" "OPENCLAW_ENDPOINT" "OPENCLAW_BASE_URL" "OPENAI_BASE_URL" "OPENAI_API_BASE" \
+       || ! has_any_config_key "OPENCLAW_PROXY_API_KEY" "OPENCLAW_LLM_API_KEY" "OPENCLAW_API_KEY" "OPENAI_API_KEY"; then
+        echo -e "${YELLOW}⚠️  未检测到完整的 OpenClaw 代理配置，当前将回退到独立模型。${NC}"
+        echo -e "${YELLOW}ℹ️  如需强制走 OpenClaw 代理，请配置 endpoint + key（OPENCLAW_* 或 OPENAI_*）。${NC}"
+    fi
+fi
+
 # 4. 执行主程序
 echo -e "${BLUE}⚙️  正在启动自动化发布流程...${NC}"
 if [ "$ARTICLE_URL" = "pipeline" ] || [ "$ARTICLE_URL" = "pipeline-once" ]; then
     echo -e "${BLUE}🧵 流水线模式: ${ARTICLE_URL}${NC}"
     python3 core/manager.py "$ARTICLE_URL"
 else
-    echo -e "${BLUE}🎭 角色: ${ROLE:-${OPENCLAW_ROLE:-tech_expert}} | 🧠 模型: ${MODEL:-${OPENCLAW_MODEL:-auto}}${NC}"
-    python3 core/manager.py "$ARTICLE_URL" "${ROLE:-${OPENCLAW_ROLE:-tech_expert}}" "${MODEL:-${OPENCLAW_MODEL:-auto}}"
+    echo -e "${BLUE}🎭 角色: ${ROLE_EFFECTIVE} | 🧠 模型: ${MODEL_EFFECTIVE}${NC}"
+    python3 core/manager.py "$ARTICLE_URL" "${ROLE_EFFECTIVE}" "${MODEL_EFFECTIVE}"
 fi
 
 if [ $? -eq 0 ]; then
