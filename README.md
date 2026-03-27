@@ -149,6 +149,50 @@ ARK_IMAGE_RESPONSE_FORMAT=b64_json
 python3 core/manager.py "https://mp.weixin.qq.com/s/xxx" tech_expert "qwen3.5-plus"
 ```
 
+### 4. 快速操作（与 `SKILL.md` 同步）
+
+1. 环境诊断与表结构初始化
+```bash
+python3 scripts/internal/diagnose.py
+python3 scripts/setup/setup_inspiration_library.py
+python3 scripts/setup/setup_content_library.py
+```
+
+2. 灵感扫描
+```bash
+python3 core/manager_inspiration.py
+```
+
+3. 流水线单次巡检（推荐给 OpenClaw 调度）
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 OPENCLAW_PIPELINE_BATCH_SIZE=3 ./run.sh pipeline-once
+```
+
+4. 流水线守护模式（仅在你明确需要常驻时）
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh pipeline
+```
+
+5. 单篇即时处理
+```bash
+OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh "<URL>" "tech_expert" "auto"
+```
+
+6. 全流程 Demo（首次联调建议先跳过发布）
+```bash
+python3 scripts/internal/demo_full_flow.py --url "<URL>" --skip-publish
+```
+
+7. 单点链路验证（抓取 -> 飞书文档 -> Bitable 附件）
+```bash
+python3 scripts/internal/single_point_test.py
+```
+
+8. 模型与封面生图路由体检
+```bash
+python3 scripts/internal/check_env.py
+```
+
 ## 目录说明
 
 - `run.sh`: **运营操作入口**，提供交互式界面和环境检查。

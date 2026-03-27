@@ -17,6 +17,7 @@ metadata: {"openclaw":{"emoji":"🚀","requires":{"python":">=3.9"}}}
 2. “跑流水线 / 自动发布 / 处理待发布队列”
 3. “把这篇文章改写并发布：<URL>”
 4. “修复改写失败/发布失败记录”
+5. “跑一下全流程 demo / 验证能不能打通”
 
 ## 2) OpenClaw 调用总原则
 1. 默认优先单次巡检：`pipeline-once`，不要默认起常驻进程。
@@ -77,6 +78,34 @@ OPENCLAW_NON_INTERACTIVE=1 OPENCLAW_AUTO_INSTALL=0 ./run.sh "<URL>" "tech_expert
 也可直接：
 ```bash
 python3 core/manager.py "<URL>" "tech_expert" "auto"
+```
+
+### Action F: 全流程 Demo（从 URL 到流水线执行）
+适用：用户要快速验证“完整链路是否能跑起来”。
+
+执行命令：
+```bash
+python3 scripts/internal/demo_full_flow.py --url "<URL>" --skip-publish
+```
+
+说明：
+1. 首次联调推荐先加 `--skip-publish`，先验证抓取、改写、飞书回写。
+2. 去掉 `--skip-publish` 后可走发布链路（需微信白名单 IP 与公众号权限就绪）。
+
+### Action G: 单点链路验证（抓取 -> 飞书文档 -> Bitable 附件）
+适用：用户要定位素材转存问题，但不想跑完整流水线。
+
+执行命令：
+```bash
+python3 scripts/internal/single_point_test.py
+```
+
+### Action H: 环境与路由体检
+适用：用户问“当前到底会走哪个模型/哪个生图路由”。
+
+执行命令：
+```bash
+python3 scripts/internal/check_env.py
 ```
 
 ## 4) 模型与参数约定
