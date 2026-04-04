@@ -85,6 +85,56 @@ class FeishuBitable:
             print(f"❌ 获取记录异常: {e}")
         return {"items": []}
 
+    def list_records_all(self, table_id, filter_cond=None, max_items=500):
+        """分页读取指定数据表记录（最多 max_items 条）"""
+        if not self._get_token():
+            return {"items": [], "has_more": False}
+
+        url = f"{self.base_url}/bitable/v1/apps/{self.app_token}/tables/{table_id}/records"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        base_params = {"page_size": 100}
+        if filter_cond:
+            base_params["filter"] = filter_cond
+
+        all_items = []
+        page_token = ""
+        has_more = True
+
+        while has_more and len(all_items) < max(1, int(max_items or 1)):
+            params = dict(base_params)
+            if page_token:
+                params["page_token"] = page_token
+
+            try:
+                resp = requests.get(url, headers=headers, params=params).json()
+                if resp.get("code") == 99991663:
+                    self._get_token(force=True)
+                    headers = {"Authorization": f"Bearer {self.token}"}
+                    resp = requests.get(url, headers=headers, params=params).json()
+
+                if resp.get("code") != 0:
+                    print(f"❌ 分页获取记录失败: {resp}")
+                    break
+
+                data = resp.get("data", {}) or {}
+                items = data.get("items", []) or []
+                all_items.extend(items)
+
+                has_more = bool(data.get("has_more"))
+                page_token = str(data.get("page_token") or "")
+                if not has_more or not page_token:
+                    break
+            except Exception as e:
+                print(f"❌ 分页获取记录异常: {e}")
+                break
+
+        limited = all_items[: max(1, int(max_items or 1))]
+        return {
+            "items": limited,
+            "count": len(limited),
+            "has_more": len(all_items) > len(limited) or has_more,
+        }
+
     def add_record(self, table_id, fields):
         """向指定数据表添加一条记录"""
         result = self.add_record_with_result(table_id, fields)

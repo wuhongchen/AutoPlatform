@@ -2,10 +2,12 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import os
+from modules.wechat_demo_bridge import WechatDemoBridge
 
 class ContentCollector:
     def __init__(self, timeout=30):
         self.timeout = timeout
+        self.wechat_demo_bridge = WechatDemoBridge()
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -20,6 +22,14 @@ class ContentCollector:
         """抓取并提取文章内容"""
         print(f"📥 正在抓取: {url}")
         try:
+            if 'mp.weixin.qq.com' in url:
+                bridge_data = self.wechat_demo_bridge.fetch(url)
+                if bridge_data:
+                    char_count = len(bridge_data.get('content_raw', ''))
+                    img_count = len(bridge_data.get('images', []))
+                    print(f"✅ 微信 demo 抓取成功: {bridge_data.get('title', '无标题')} ({char_count}字, {img_count}图)")
+                    return bridge_data
+
             # 使用会话保持状态
             session = requests.Session()
             response = session.get(url, headers=self.headers, timeout=self.timeout, allow_redirects=True)

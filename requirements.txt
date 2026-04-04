@@ -5,3 +5,4 @@ volcengine
 openai
 duckduckgo-search
 markdown-it-py
+flask

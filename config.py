@@ -66,6 +66,13 @@ class Config:
     WECHAT_AD_IMAGE_PATH = os.getenv("WECHAT_AD_IMAGE_PATH", "")  # 本地图片路径（推荐）
     WECHAT_AD_IMAGE_URL = os.getenv("WECHAT_AD_IMAGE_URL", "")    # 远程图片 URL（可选）
     WECHAT_AD_IMAGE_LINK_URL = os.getenv("WECHAT_AD_IMAGE_LINK_URL", "")
+
+    # 可选：对接外部 wechat-demo-cli 抓取器（用于公众号登录态抓正文）
+    OPENCLAW_WECHAT_DEMO_ENABLED = os.getenv("OPENCLAW_WECHAT_DEMO_ENABLED", "0")
+    OPENCLAW_WECHAT_DEMO_CLI = os.getenv("OPENCLAW_WECHAT_DEMO_CLI", "")
+    OPENCLAW_WECHAT_DEMO_PYTHON = os.getenv("OPENCLAW_WECHAT_DEMO_PYTHON", "python3")
+    OPENCLAW_WECHAT_DEMO_TIMEOUT = os.getenv("OPENCLAW_WECHAT_DEMO_TIMEOUT", "180")
+    OPENCLAW_WECHAT_ACCOUNTS_ROOT = os.getenv("OPENCLAW_WECHAT_ACCOUNTS_ROOT", "")
     
     @classmethod
     def check_keys(cls):

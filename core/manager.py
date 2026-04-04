@@ -364,10 +364,16 @@ class AutoPlatformManager:
                 else:
                     print(f"   ⚠️ 未找到广告图片路径: {ad_path}")
 
-        # 深度应用微信公众号排版样式与标题清理
-        from modules.mp_processor import WeChatFormatter
-        content_html = WeChatFormatter.deep_optimize_format(content_html)
-        clean_title = WeChatFormatter.optimize_title(rewritten_data['title'])
+        # 深度应用公众号排版（默认：huasheng wechat-default）
+        try:
+            from modules.huasheng_formatter import HuashengWeChatFormatter
+            content_html = HuashengWeChatFormatter.deep_optimize_format(content_html)
+            clean_title = HuashengWeChatFormatter.optimize_title(rewritten_data['title'])
+        except Exception as e:
+            print(f"   ⚠️ huasheng 默认排版失败，回退内置排版: {e}")
+            from modules.mp_processor import WeChatFormatter
+            content_html = WeChatFormatter.deep_optimize_format(content_html)
+            clean_title = WeChatFormatter.optimize_title(rewritten_data['title'])
         
         draft_id = self.publisher.publish_draft(
             title=clean_title,

@@ -18,11 +18,16 @@ class DeepMPProcessor:
 
     # --- 阶段一：逻辑结构分析 (Structure Analyzer) ---
     def _get_analysis_prompt(self, content):
+        content_direction = (os.getenv("OPENCLAW_CONTENT_DIRECTION") or "").strip()
+        direction_block = ""
+        if content_direction:
+            direction_block = f"\n**账户内容方向约束：**\n{content_direction}\n"
         return f"""
 你是一位深耕行业十年的顶级科技媒体主编。请对以下内容进行深度解构，为后续原创长文提供逻辑支架。
 
 **待分析内容（节选）:**
 {content}
+{direction_block}
 
 **请严格输出 JSON 结构:**
 {{
@@ -36,6 +41,20 @@ class DeepMPProcessor:
     # --- 阶段二：完全原创长文写作 (Original Deep Writer) ---
     def _get_generation_prompt(self, analysis, image_count):
         img_hint = "\n".join([f"  - [IMAGE_{i}]" for i in range(image_count)]) if image_count else "  - (本次抓取无原文配图)"
+        wechat_prompt_direction = (os.getenv("OPENCLAW_WECHAT_PROMPT_DIRECTION") or "").strip()
+        prompt_direction = (os.getenv("OPENCLAW_PROMPT_DIRECTION") or "").strip()
+        direction_block = ""
+        if wechat_prompt_direction or prompt_direction:
+            parts = []
+            if wechat_prompt_direction:
+                parts.append(f"公众号方向：{wechat_prompt_direction}")
+            if prompt_direction:
+                parts.append(f"通用方向：{prompt_direction}")
+            direction_block = (
+                "\n**账户提示词方向（高优先级）:**\n"
+                + "\n".join([f"- {x}" for x in parts])
+                + "\n请在标题与段落组织中显式体现以上方向。\n"
+            )
         return f"""
 你是一位获过奖的深度特稿记者，擅长撰写逻辑严密、细节丰满的公众号原创长文。
 
@@ -44,6 +63,7 @@ class DeepMPProcessor:
 
 **你可以使用的图片资源（请在正文中通过占位符调用）：**
 {img_hint}
+{direction_block}
 
 **【写作铁律：拒绝平庸，追求行业纵深】**
 1. **内容饱满**：严禁简单的文字搬运。必须加入行业纵深对比、底层逻辑推演以及趋势预判。

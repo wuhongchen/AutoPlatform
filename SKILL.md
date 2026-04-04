@@ -211,6 +211,19 @@ python3 scripts/internal/single_point_test.py
 python3 scripts/internal/check_env.py
 ```
 
+### Action I: 管理后台启动（新增）
+适用：用户需要可视化管理页面，统一触发扫描/流水线/单篇/Demo/定时执行。
+
+执行命令：
+```bash
+python3 admin_server.py
+```
+
+访问地址：
+1. `http://127.0.0.1:8701`
+2. 可通过 `ADMIN_HOST/ADMIN_PORT` 修改监听地址
+3. 支持多账户：每个账户独立配置公众号参数、飞书参数、表格名、改写方向提示词；动作按“激活账户”执行
+
 ## 4) 模型与参数约定
 模型优先级：
 1. CLI 第三个参数（单篇模式）
@@ -304,6 +317,9 @@ OPENCLAW_PIPELINE_ROLE=tech_expert
 OPENCLAW_SCHEMA_CHECK_ENABLED=1
 OPENCLAW_SCHEMA_CHECK_INTERVAL_SEC=21600
 COVER_IMAGE_PROVIDER=auto
+OPENCLAW_CONTENT_DIRECTION=
+OPENCLAW_PROMPT_DIRECTION=
+OPENCLAW_WECHAT_PROMPT_DIRECTION=
 ```
 
 独立模型模式（不走 OpenClaw 代理）可选补充：

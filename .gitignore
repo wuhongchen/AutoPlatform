@@ -13,3 +13,6 @@ tmp/
 .idea/
 .vscode/
 output/.schema_checked_*.stamp
+output/admin_accounts.json
+frontend/admin/node_modules/
+frontend/admin/dist/

@@ -35,6 +35,29 @@ class ContentProcessor:
             
         role = ROLES.get(role_key, ROLES[DEFAULT_ROLE])
         print(f"🤖 正在调用 AI [{model_cfg['name']}] 使用 [{role['name']}] 角色进行改写...")
+
+        content_direction = self._first_non_empty_env("OPENCLAW_CONTENT_DIRECTION")
+        prompt_direction = self._first_non_empty_env("OPENCLAW_PROMPT_DIRECTION")
+        system_prompt = role["system_prompt"]
+        if prompt_direction:
+            system_prompt += (
+                "\n\n【账户提示词方向】\n"
+                f"{prompt_direction}\n"
+                "请在不偏离事实的前提下优先遵循该方向。"
+            )
+
+        user_prompt = (
+            f"请改写以下文章：\n"
+            f"标题：{article_data['title']}\n"
+            f"作者：{article_data['author']}\n"
+            f"内容：{article_data['content_raw']}"
+        )
+        if content_direction:
+            user_prompt += (
+                "\n\n【本篇内容方向】\n"
+                f"{content_direction}\n"
+                "请按该方向调整选题角度、论证重点与表达风格。"
+            )
         
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -44,8 +67,8 @@ class ContentProcessor:
         payload = {
             "model": model_name,
             "messages": [
-                {"role": "system", "content": role['system_prompt']},
-                {"role": "user", "content": f"请改写以下文章：\n标题：{article_data['title']}\n作者：{article_data['author']}\n内容：{article_data['content_raw']}"}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             "temperature": 0.7
         }

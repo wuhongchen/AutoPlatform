@@ -1,0 +1,318 @@
+{
+  "ok": false,
+  "base_url": "http://127.0.0.1:52913",
+  "checked_at": "2026-03-31 14:44:24",
+  "summary": {
+    "passed": 50,
+    "failed": 1,
+    "total": 51
+  },
+  "results": [
+    {
+      "category": "api",
+      "name": "health endpoint",
+      "ok": true,
+      "detail": "{\"active_account\": {\"id\": \"default\", \"name\": \"默认示例账户\"}, \"defaults\": {\"batch\": \"3\", \"model\": \"kimi-k2.5\", \"role\": \"tech_expert\"}, \"ok\": true, \"project_root\": \"/Users/hongchen/Downloads/code/wxz/autoinfo-platform\", \"python\": \"python3\", \"time\": \"2026-03-31 14:44:20\"}"
+    },
+    {
+      "category": "api",
+      "name": "accounts endpoint",
+      "ok": true,
+      "detail": "active_account_id=default, accounts=1"
+    },
+    {
+      "category": "api",
+      "name": "overview endpoint",
+      "ok": true,
+      "detail": "overview_ok=True, inspiration_total=60"
+    },
+    {
+      "category": "api",
+      "name": "jobs endpoint",
+      "ok": true,
+      "detail": "jobs=0"
+    },
+    {
+      "category": "api",
+      "name": "scheduler endpoint",
+      "ok": true,
+      "detail": "{\"minutes\": 0, \"next_run_at\": \"\", \"running\": false}"
+    },
+    {
+      "category": "page",
+      "name": "view overview",
+      "ok": true,
+      "detail": "selector=#view-overview"
+    },
+    {
+      "category": "page",
+      "name": "view accounts",
+      "ok": true,
+      "detail": "selector=#view-accounts"
+    },
+    {
+      "category": "page",
+      "name": "view inspiration",
+      "ok": true,
+      "detail": "selector=#view-inspiration"
+    },
+    {
+      "category": "page",
+      "name": "view pipeline",
+      "ok": true,
+      "detail": "selector=#view-pipeline"
+    },
+    {
+      "category": "page",
+      "name": "view publish",
+      "ok": true,
+      "detail": "selector=#view-publish"
+    },
+    {
+      "category": "page",
+      "name": "view trace",
+      "ok": true,
+      "detail": "selector=#view-trace"
+    },
+    {
+      "category": "page",
+      "name": "view settings",
+      "ok": true,
+      "detail": "selector=#view-settings"
+    },
+    {
+      "category": "page",
+      "name": "sidebar navigation",
+      "ok": true,
+      "detail": "nav_views=['overview', 'accounts', 'inspiration', 'pipeline', 'publish', 'trace', 'settings']"
+    },
+    {
+      "category": "page",
+      "name": "overview metrics",
+      "ok": true,
+      "detail": "selector=#overviewMetricGrid"
+    },
+    {
+      "category": "page",
+      "name": "overview warnings",
+      "ok": true,
+      "detail": "selector=#overviewAlertCard"
+    },
+    {
+      "category": "page",
+      "name": "accounts form",
+      "ok": true,
+      "detail": "selector=#accName"
+    },
+    {
+      "category": "page",
+      "name": "accounts toolbar actions",
+      "ok": true,
+      "detail": "selector=#accountCreateBtn"
+    },
+    {
+      "category": "page",
+      "name": "accounts save action",
+      "ok": true,
+      "detail": "selector=#accountSaveBtn"
+    },
+    {
+      "category": "page",
+      "name": "accounts toggle action",
+      "ok": true,
+      "detail": "selector=#accountToggleBtn"
+    },
+    {
+      "category": "page",
+      "name": "accounts delete action",
+      "ok": true,
+      "detail": "selector=#accountDeleteBtn"
+    },
+    {
+      "category": "page",
+      "name": "inspiration grid",
+      "ok": true,
+      "detail": "selector=#inspirationGrid"
+    },
+    {
+      "category": "page",
+      "name": "pipeline kanban",
+      "ok": true,
+      "detail": "selector=#pipelineKanban"
+    },
+    {
+      "category": "page",
+      "name": "publish table",
+      "ok": true,
+      "detail": "selector=#publishRows"
+    },
+    {
+      "category": "page",
+      "name": "trace table",
+      "ok": true,
+      "detail": "selector=#traceRows"
+    },
+    {
+      "category": "page",
+      "name": "settings scheduler",
+      "ok": true,
+      "detail": "selector=#schMinutes"
+    },
+    {
+      "category": "page",
+      "name": "account section #accountList",
+      "ok": true,
+      "detail": "selector=#accountList"
+    },
+    {
+      "category": "page",
+      "name": "account section #accName",
+      "ok": true,
+      "detail": "selector=#accName"
+    },
+    {
+      "category": "page",
+      "name": "account section #accWechatAppId",
+      "ok": true,
+      "detail": "selector=#accWechatAppId"
+    },
+    {
+      "category": "page",
+      "name": "account section #accFeishuAppToken",
+      "ok": true,
+      "detail": "selector=#accFeishuAppToken"
+    },
+    {
+      "category": "page",
+      "name": "account section #accFeishuPipelineTable",
+      "ok": true,
+      "detail": "selector=#accFeishuPipelineTable"
+    },
+    {
+      "category": "page",
+      "name": "account section #accDirection",
+      "ok": true,
+      "detail": "selector=#accDirection"
+    },
+    {
+      "category": "page",
+      "name": "account section #accountWarnings",
+      "ok": true,
+      "detail": "selector=#accountWarnings"
+    },
+    {
+      "category": "page",
+      "name": "account field blocks",
+      "ok": true,
+      "detail": "count=22"
+    },
+    {
+      "category": "page",
+      "name": "account helper texts",
+      "ok": true,
+      "detail": "count=22"
+    },
+    {
+      "category": "page",
+      "name": "account section blocks",
+      "ok": true,
+      "detail": "count=6"
+    },
+    {
+      "category": "page",
+      "name": "account toolbar buttons",
+      "ok": true,
+      "detail": "missing=none"
+    },
+    {
+      "category": "page",
+      "name": "page titles",
+      "ok": true,
+      "detail": "missing=none"
+    },
+    {
+      "category": "page",
+      "name": "action binding /api/actions/inspiration-scan",
+      "ok": true,
+      "detail": "/api/actions/inspiration-scan"
+    },
+    {
+      "category": "page",
+      "name": "action binding /api/actions/pipeline-once",
+      "ok": true,
+      "detail": "/api/actions/pipeline-once"
+    },
+    {
+      "category": "page",
+      "name": "action binding /api/actions/single-article",
+      "ok": true,
+      "detail": "/api/actions/single-article"
+    },
+    {
+      "category": "page",
+      "name": "action binding /api/actions/full-demo",
+      "ok": true,
+      "detail": "/api/actions/full-demo"
+    },
+    {
+      "category": "page",
+      "name": "unsafe style selector removed .topbar button,",
+      "ok": true,
+      "detail": "selector=.topbar button,"
+    },
+    {
+      "category": "page",
+      "name": "unsafe style selector removed .page-toolbar button,",
+      "ok": false,
+      "detail": "selector=.page-toolbar button,"
+    },
+    {
+      "category": "page",
+      "name": "vue preview route",
+      "ok": true,
+      "detail": "selector=/vue"
+    },
+    {
+      "category": "action",
+      "name": "create temp account",
+      "ok": true,
+      "detail": "{\"content_direction\": \"测试内容方向\", \"created_at\": \"2026-03-31 14:44:24\", \"enabled\": true, \"feishu_admin_user_id\": \"7278949264247013380\", \"feishu_app_id\": \"cli_a85b1afbbcb99013\", \"feishu_app_secret\": \"WJ7zZacqrSqUM6HpIpE0BegKJVmDbeN6\", \"feishu_app_token\": \"KkDFb19FNazzaNs7tNRcdyZNnWb\", \"feishu_inspiration_table\": \"内容灵感库\", \"feishu_pipeline_table\": \"小龙虾智能内容库\", \"feishu_publish_log_table\": \"发布记录\", \"id\": \"ui-test-1774939464\", \"last_run_at\": \"\", \"name\": \"UI 测试账户\", \"pipeline_batch_size\": 2, \"pipeline_model\": \"auto\", \"pipeline_role\": \"tech_expert\", \"prompt_direction\": \"测试改写方向\", \"updated_at\": \"2026-03-31 14:44:24\", \"wechat_appid\": \"wx0d47adc0348efc8e\", \"wechat_author\": \"W 小龙虾\", \"wechat_prompt_direction\": \"测试公众号成稿方向\", \"wechat_secret\": \"9755e03e55e1a6effe481d015fa1681d\"}"
+    },
+    {
+      "category": "action",
+      "name": "activate temp account",
+      "ok": true,
+      "detail": "{\"active_account_id\": \"ui-test-1774939464\", \"item\": {\"content_direction\": \"测试内容方向\", \"created_at\": \"2026-03-31 14:44:24\", \"enabled\": true, \"feishu_admin_user_id\": \"7278949264247013380\", \"feishu_app_id\": \"cli_a85b1afbbcb99013\", \"feishu_app_secret\": \"WJ7zZacqrSqUM6HpIpE0BegKJVmDbeN6\", \"feishu_app_token\": \"KkDFb19FNazzaNs7tNRcdyZNnWb\", \"feishu_inspiration_table\": \"内容灵感库\", \"feishu_pipeline_table\": \"小龙虾智能内容库\", \"feishu_publish_log_table\": \"发布记录\", \"id\": \"ui-test-1774939464\", \"last_run_at\": \"\", \"name\": \"UI 测试账户\", \"pipeline_batch_size\": 2, \"pipeline_model\": \"auto\", \"pipeline_role\": \"tech_expert\", \"prompt_direction\": \"测试改写方向\", \"updated_at\": \"2026-03-31 14:44:24\", \"wechat_appid\": \"wx0d47adc0348efc8e\", \"wechat_author\": \"W 小龙虾\", \"wechat_prompt_direction\": \"测试公众号成稿方向\", \"wechat_secret\": \"9755e03e55e1a6effe481d015fa1681d\"}, \"ok\": true}"
+    },
+    {
+      "category": "action",
+      "name": "verify temp account active",
+      "ok": true,
+      "detail": "active=ui-test-1774939464"
+    },
+    {
+      "category": "action",
+      "name": "restore original active account",
+      "ok": true,
+      "detail": "{\"active_account_id\": \"default\", \"item\": {\"content_direction\": \"AI 工具实操、OpenClaw 使用技巧、公众号自动化运营经验分享\", \"created_at\": \"2026-03-31 00:47:46\", \"enabled\": true, \"feishu_admin_user_id\": \"7278949264247013380\", \"feishu_app_id\": \"cli_a85b1afbbcb99013\", \"feishu_app_secret\": \"WJ7zZacqrSqUM6HpIpE0BegKJVmDbeN6\", \"feishu_app_token\": \"KkDFb19FNazzaNs7tNRcdyZNnWb\", \"feishu_inspiration_table\": \"内容灵感库\", \"feishu_pipeline_table\": \"小龙虾智能内容库\", \"feishu_publish_log_table\": \"发布记录\", \"id\": \"default\", \"last_run_at\": \"2026-03-31 14:36:21\", \"name\": \"默认示例账户\", \"pipeline_batch_size\": 3, \"pipeline_model\": \"kimi-k2.5\", \"pipeline_role\": \"tech_expert\", \"prompt_direction\": \"结论先行，少空话，多给明确步骤、场景收益和避坑提醒，语言保持专业但易读。\", \"updated_at\": \"2026-03-31 09:29:20\", \"wechat_appid\": \"wx0d47adc0348efc8e\", \"wechat_author\": \"W 小龙虾\", \"wechat_prompt_direction\": \"标题要有信息密度，导语直接点出问题，正文分段清晰，适合手机端阅读，结尾给执行建议。\", \"wechat_secret\": \"9755e03e55e1a6effe481d015fa1681d\"}, \"ok\": true}"
+    },
+    {
+      "category": "action",
+      "name": "delete temp account",
+      "ok": true,
+      "detail": "{\"active_account_id\": \"default\", \"ok\": true}"
+    },
+    {
+      "category": "action",
+      "name": "scheduler start",
+      "ok": true,
+      "detail": "{\"minutes\": 59, \"next_run_at\": \"\", \"running\": true}"
+    },
+    {
+      "category": "action",
+      "name": "scheduler restore stopped state",
+      "ok": true,
+      "detail": "{\"minutes\": 59, \"next_run_at\": \"\", \"running\": false}"
+    }
+  ]
+}

@@ -69,3 +69,45 @@ python3 scripts/internal/demo_full_flow.py --url "https://mp.weixin.qq.com/s/wrs
 ```bash
 python3 scripts/internal/demo_full_flow.py --url "https://mp.weixin.qq.com/s/wrsaOwVYDKd2lEDmRs65Jg" --skip-publish
 ```
+
+## 7) 管理后台测试 Agent（页面与展示巡检）
+
+```bash
+python3 scripts/internal/test_admin_ui_agent.py
+```
+
+目标：
+1. 自动启动管理后台并检查所有页面视图是否存在
+2. 验证关键展示区域、按钮绑定和主要接口可用性
+3. 巡检 `灵感库 / 追踪中心 / 发布日志` 的关键区块是否存在（筛选、明细、表格、动作按钮）
+4. 巡检账户页壳层结构（动作栏、目录、表单分区、字段帮助文案）是否完整
+5. 巡检窄屏相关防溢出规则（工具栏换行策略、横向滚动保护、看板宽度保护）
+6. 巡检 Vue 预览页壳层（`/vue`）是否可访问、静态资源是否可加载、响应式媒体查询是否存在
+7. 安全测试多账户创建/切换/删除与定时任务开关
+8. 输出报告到 `output/admin-ui-agent-report-*.json` 与 `output/admin-ui-agent-report-*.md`
+
+说明：
+1. 默认不触发真实抓取、改写、发布动作
+2. 适合作为后台 UI 改版后的回归巡检入口
+
+## 8) 微信登录态采集链路测试（多账户）
+
+```bash
+# 1) 查看运行状态
+./run_wechat_ingest.sh --account-id default status
+
+# 2) 扫码登录（生成二维码后返回）
+./run_wechat_ingest.sh --account-id default login --no-wait --qr-display both
+
+# 3) 检索并关注目标公众号
+./run_wechat_ingest.sh --account-id default search-mp "机器之心" --limit 8
+./run_wechat_ingest.sh --account-id default add-mp --keyword "机器之心" --pick 1
+
+# 4) 拉取文章列表并同步到灵感库
+./run_wechat_ingest.sh --account-id default pull-articles --mp-id MP_WXS_xxx --pages 1 --mode api
+./run_wechat_ingest.sh --account-id default sync-inspiration --mp-id MP_WXS_xxx --limit 20
+```
+
+目标：
+1. 每个账户写入独立目录（默认 `output/wechat_accounts/<account_id>/`）。
+2. 文章 URL 成功进入飞书灵感库，并标记为 `待分析`。

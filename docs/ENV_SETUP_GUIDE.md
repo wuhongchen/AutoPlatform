@@ -76,3 +76,16 @@ VOLCENGINE_SK=...
 1. `auto`：优先方舟，失败回退即梦。
 2. `ark`：只走方舟。
 3. `jimeng`：只走即梦。
+
+## 8) 可选：微信登录态采集（多账户）
+
+如果你要启用“扫码登录 -> 关注号 -> 内容列表 -> 入灵感库”链路，请补充：
+1. `OPENCLAW_WECHAT_DEMO_CLI`：`wechat_demo_cli.py` 绝对路径。
+2. `OPENCLAW_WECHAT_DEMO_PYTHON`：demo 环境 Python（可留空默认自动探测 `.venv/bin/python`）。
+3. `OPENCLAW_WECHAT_ACCOUNTS_ROOT`：多账户隔离目录根路径（可选，默认 `output/wechat_accounts`）。
+
+独立运行入口：
+```bash
+./run_wechat_ingest.sh status
+./run_wechat_ingest.sh --account-id default login --no-wait --qr-display both
+```
