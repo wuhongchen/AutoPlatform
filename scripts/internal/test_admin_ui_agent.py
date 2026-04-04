@@ -18,6 +18,56 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HOST = "127.0.0.1"
 REPORT_DIR = ROOT / "output"
+REDACTED = "<redacted>"
+SENSITIVE_KEY_PATTERN = re.compile(
+    r"(secret|token|api[_-]?key|cookie|authorization)",
+    re.IGNORECASE,
+)
+
+
+def _mask_secret(value):
+    text = str(value or "")
+    return REDACTED if text else text
+
+
+def _is_sensitive_key(key: str) -> bool:
+    return bool(SENSITIVE_KEY_PATTERN.search(str(key or "")))
+
+
+def _redact_text(text: str) -> str:
+    if not text:
+        return text
+
+    redacted = text
+    redacted = re.sub(
+        r'("([^"\\]|\\.)*?(secret|token|api[_-]?key|cookie|authorization)([^"\\]|\\.)*?"\s*:\s*)"([^"\\]|\\.)*"',
+        lambda m: f'{m.group(1)}"{REDACTED}"',
+        redacted,
+        flags=re.IGNORECASE,
+    )
+    redacted = re.sub(
+        r"\b([A-Z0-9_]*(SECRET|TOKEN|API_KEY|COOKIE|AUTHORIZATION)[A-Z0-9_]*)=([^\s]+)",
+        lambda m: f"{m.group(1)}={REDACTED}",
+        redacted,
+        flags=re.IGNORECASE,
+    )
+    return redacted
+
+
+def _redact_value(value):
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if _is_sensitive_key(str(key)):
+                out[key] = _mask_secret(item)
+            else:
+                out[key] = _redact_value(item)
+        return out
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value)
+    return value
 
 
 @dataclass
@@ -40,7 +90,14 @@ class AdminUITestAgent:
         self.server_log_lines: List[str] = []
 
     def record(self, category: str, name: str, ok: bool, detail: str):
-        self.results.append(CheckResult(category=category, name=name, ok=ok, detail=detail))
+        self.results.append(
+            CheckResult(
+                category=category,
+                name=name,
+                ok=ok,
+                detail=_redact_text(detail),
+            )
+        )
 
     def wait_for_server(self, timeout: float = 20.0):
         deadline = time.time() + timeout
@@ -256,6 +313,7 @@ class AdminUITestAgent:
             "summary": {"passed": passed, "failed": failed, "total": len(self.results)},
             "results": [asdict(item) for item in self.results],
         }
+        payload = _redact_value(payload)
         json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
         lines = [

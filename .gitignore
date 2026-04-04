@@ -14,5 +14,7 @@ tmp/
 .vscode/
 output/.schema_checked_*.stamp
 output/admin_accounts.json
+output/admin-ui-agent-report-*.json
+output/admin-ui-agent-report-*.md
 frontend/admin/node_modules/
 frontend/admin/dist/

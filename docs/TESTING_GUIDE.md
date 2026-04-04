@@ -84,11 +84,12 @@ python3 scripts/internal/test_admin_ui_agent.py
 5. 巡检窄屏相关防溢出规则（工具栏换行策略、横向滚动保护、看板宽度保护）
 6. 巡检 Vue 预览页壳层（`/vue`）是否可访问、静态资源是否可加载、响应式媒体查询是否存在
 7. 安全测试多账户创建/切换/删除与定时任务开关
-8. 输出报告到 `output/admin-ui-agent-report-*.json` 与 `output/admin-ui-agent-report-*.md`
+8. 输出已脱敏报告到 `output/admin-ui-agent-report-*.json` 与 `output/admin-ui-agent-report-*.md`
 
 说明：
 1. 默认不触发真实抓取、改写、发布动作
 2. 适合作为后台 UI 改版后的回归巡检入口
+3. 报告中的密钥、token、cookie 等敏感字段会自动脱敏，且这些报告默认不纳入 Git
 
 ## 8) 微信登录态采集链路测试（多账户）
 
