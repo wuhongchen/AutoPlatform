@@ -1,36 +1,42 @@
 # AutoPlatform Makefile
+# 简化项目运行命令
 
-.PHONY: help install dev-install server cli test clean
+.PHONY: help install backend frontend dev build clean
 
+# 默认显示帮助
 help:
-	@echo "AutoPlatform 命令快捷方式"
+	@echo "AutoPlatform 项目命令"
 	@echo ""
-	@echo "  make install     - 安装依赖"
-	@echo "  make dev-install - 安装开发依赖"
-	@echo "  make server      - 启动API服务"
-	@echo "  make cli         - 进入CLI交互模式"
-	@echo "  make test        - 运行测试"
-	@echo "  make clean       - 清理临时文件"
+	@echo "可用命令:"
+	@echo "  make install    安装前后端所有依赖"
+	@echo "  make backend    启动后端 API 服务 (http://127.0.0.1:8701)"
+	@echo "  make frontend   启动前端开发服务器 (http://127.0.0.1:5173)"
+	@echo "  make dev        同时启动前后端 (开发模式)"
+	@echo "  make build      构建前端生产版本"
+	@echo "  make clean      清理缓存和临时文件"
+	@echo ""
+	@echo "或使用 ./run.sh 查看更多选项"
 
+# 安装依赖
 install:
-	pip install -r requirements.txt
+	./run.sh install
 
-dev-install:
-	pip install -r requirements.txt
-	pip install -r requirements-dev.txt
+# 启动后端
+backend:
+	./run.sh backend
 
-server:
-	python main.py server
+# 启动前端
+frontend:
+	./run.sh frontend
 
-cli:
-	python -m app.cli.main
+# 开发模式（前后端同时）
+dev:
+	./run.sh dev
 
-test:
-	pytest tests/ -v
+# 构建前端
+build:
+	./run.sh build
 
+# 清理缓存
 clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*.pyo" -delete
-	rm -rf .pytest_cache
-	rm -rf data/db/*.db
+	./run.sh clean
