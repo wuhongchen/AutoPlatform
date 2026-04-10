@@ -15,7 +15,7 @@
         text-color="#64748b"
         active-text-color="#4f46e5"
       >
-        <el-menu-item v-for="route in menuRoutes" :key="route.path" :index="route.path">
+        <el-menu-item v-for="route in menuRoutes" :key="route.path" :index="'/' + route.path">
           <el-icon>
             <component :is="route.meta.icon" />
           </el-icon>
