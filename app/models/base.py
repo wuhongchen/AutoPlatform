@@ -3,7 +3,6 @@
 """
 
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -16,12 +15,3 @@ class BaseDBModel(BaseModel):
     
     class Config:
         from_attributes = True
-
-
-class StatusEnum(str, Enum):
-    """状态枚举基类"""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
