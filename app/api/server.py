@@ -248,4 +248,18 @@ def run_server(host="127.0.0.1", port=8701, debug=False):
     app.run(host=host, port=port, debug=debug)
 
 if __name__ == "__main__":
-    run_server()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="AutoPlatform API Server")
+    parser.add_argument("--host", default="127.0.0.1", help="监听地址 (默认: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8701, help="监听端口 (默认: 8701)")
+    parser.add_argument("--debug", action="store_true", help="调试模式")
+    
+    args = parser.parse_args()
+    
+    print(f"🚀 AutoPlatform API Server")
+    print(f"📍 地址: http://{args.host}:{args.port}")
+    print(f"🔧 模式: {'调试' if args.debug else '生产'}")
+    print()
+    
+    run_server(host=args.host, port=args.port, debug=args.debug)

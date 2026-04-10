@@ -16,6 +16,8 @@ NC='\033[0m' # No Color
 # 项目路径
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$PROJECT_DIR/.venv"
+VENV_PYTHON="$VENV_DIR/bin/python3"
+VENV_PIP="$VENV_DIR/bin/pip"
 
 # 显示帮助
 show_help() {
@@ -89,15 +91,23 @@ setup_venv() {
         python3 -m venv "$VENV_DIR"
     fi
     
-    source "$VENV_DIR/bin/activate"
+    # 确保 pip 是最新的
+    if [ -f "$VENV_PYTHON" ]; then
+        "$VENV_PYTHON" -m pip install -q --upgrade pip 2>/dev/null || true
+    fi
 }
 
 # 安装后端依赖
 install_backend_deps() {
     info "安装后端依赖..."
     setup_venv
-    pip install -q --upgrade pip
-    pip install -q -r "$PROJECT_DIR/requirements.txt"
+    
+    if [ ! -f "$VENV_PYTHON" ]; then
+        error "虚拟环境创建失败"
+        exit 1
+    fi
+    
+    "$VENV_PYTHON" -m pip install -q -r "$PROJECT_DIR/requirements.txt"
     success "后端依赖安装完成"
 }
 
@@ -130,7 +140,18 @@ start_backend() {
     info "启动后端服务..."
     info "地址: http://$host:$port"
     
-    setup_venv
+    # 检查虚拟环境和依赖
+    if [ ! -f "$VENV_PYTHON" ]; then
+        warning "虚拟环境不存在，正在创建..."
+        setup_venv
+        install_backend_deps
+    fi
+    
+    # 检查 flask 是否安装
+    if ! "$VENV_PYTHON" -c "import flask" 2>/dev/null; then
+        warning "依赖未安装，正在安装..."
+        install_backend_deps
+    fi
     
     cd "$PROJECT_DIR"
     export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
@@ -138,7 +159,7 @@ start_backend() {
     success "后端服务已启动"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    python3 -m app.api.server --host "$host" --port "$port"
+    "$VENV_PYTHON" -m app.api.server --host "$host" --port "$port"
 }
 
 # 启动前端开发服务器
