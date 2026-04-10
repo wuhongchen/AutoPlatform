@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+
+{% block title %}账户管理 - AutoPlatform{% endblock %}
+{% block page_title %}账户管理{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>账户列表</h3>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>账户名称</th>
+                    <th>账户ID</th>
+                    <th>状态</th>
+                    <th>默认风格</th>
+                    <th>创建时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                <tr>
+                    <td><strong>{{ account.name }}</strong></td>
+                    <td>{{ account.account_id }}</td>
+                    <td><span class="badge badge-success">{{ account.status.value }}</span></td>
+                    <td>{{ account.pipeline_role }}</td>
+                    <td>{{ account.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

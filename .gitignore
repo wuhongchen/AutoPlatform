@@ -1,28 +1,41 @@
+# 环境配置
 .env
-venv/
+.env.local
+
+# Python
 __pycache__/
-*.log
-.DS_Store
-.gemini/
-.agents/
-.agent/
-_agents/
-_agent/
-tmp/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+
+# IDE
 .idea/
 .vscode/
-output/.schema_checked_*.stamp
-output/admin_accounts.json
-output/admin-ui-agent-report-*.json
-output/admin-ui-agent-report-*.md
-output/*.db
-output/*.db-*
-output/article_images/
-output/wechat_accounts/
-.openclaw_cache/
-.autoinfo.db
-data.db
-admin.pid
+*.swp
+*.swo
+.DS_Store
+
+# 数据文件
+data/db/*.db
+data/db/*.db-*
+output/*.html
+output/*.md
+output/*.json
+!output/.gitkeep
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
 *.pid
-EOF
+
+# 缓存
+.cache/
+*.stamp

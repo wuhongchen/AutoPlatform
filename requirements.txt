@@ -1,8 +1,39 @@
-requests
-beautifulsoup4
-python-dotenv
-volcengine
-openai
-duckduckgo-search
-markdown-it-py
-flask
+# 核心依赖
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# Web框架
+flask>=2.3.0
+
+# 数据库
+sqlalchemy>=2.0.0
+alembic>=1.11.0
+
+# HTTP和API
+requests>=2.31.0
+httpx>=0.24.0
+
+# AI/LLM
+openai>=1.0.0
+
+# 数据处理
+beautifulsoup4>=4.12.0
+markdown-it-py>=3.0.0
+
+# 图片处理
+pillow>=10.0.0
+
+# 搜索
+duckduckgo-search>=3.0.0
+
+# 任务调度
+schedule>=1.2.0
+
+# 工具
+click>=8.1.0
+rich>=13.0.0
+typer>=0.9.0
+
+# 火山引擎
+volcengine>=1.0.0
