@@ -30,6 +30,7 @@ VOLC_ENDPOINT = _normalize_chat_endpoint(
     os.getenv("VOLC_ARK_ENDPOINT"),
     "https://ark.cn-beijing.volces.com/api/v3"
 )
+VOLC_CODING_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v1/messages"  # Coding Plan Anthropic endpoint
 BAILIAN_ENDPOINT = _normalize_chat_endpoint(
     os.getenv("BAILIAN_ENDPOINT"),
     "https://coding.dashscope.aliyuncs.com/v1"
@@ -93,7 +94,11 @@ def get_runtime_default_model_key():
     """
     provider_mode = (_first_non_empty("OPENCLAW_MODEL_PROVIDER", "OPENCLAW_MODEL_SOURCE") or "auto").lower()
     explicit_default = _first_non_empty("OPENCLAW_DEFAULT_MODEL")
-    independent_default = _first_non_empty("OPENCLAW_INDEPENDENT_MODEL") or "kimi-k2.5"
+    independent_default = (
+        _first_non_empty("OPENCLAW_INDEPENDENT_MODEL")
+        or _first_non_empty("OPENCLAW_PIPELINE_MODEL")  # 复用流水线默认模型配置
+        or "kimi-k2.5"
+    )
     if independent_default not in MODEL_POOL:
         independent_default = "volcengine"
 
@@ -125,17 +130,31 @@ MODEL_POOL = {
         "model": (os.getenv("KIMI_MODEL_ID") or "moonshot-v1-8k").strip()
     },
     "kimi-k2.5": {
-        "name": "Moonshot Kimi K2.5",
-        "api_key": KIMI_API_KEY,
-        "endpoint": KIMI_ENDPOINT,
-        "model": "kimi-k2.5",
+        "name": "Moonshot Kimi K2.5 (via 火山方舟)",
+        "api_key": VOLC_API_KEY or KIMI_API_KEY,  # 优先使用火山方舟密钥
+        "endpoint": VOLC_ENDPOINT if VOLC_API_KEY else KIMI_ENDPOINT,  # 火山方舟失效时回退Kimi
+        "model": "doubao-seed-2-0-pro-260215" if VOLC_API_KEY else "kimi-k2.5",
         "capabilities": ["text_generation", "reasoning", "vision"]
     },
     "volcengine": {
         "name": "火山方舟",
         "api_key": VOLC_API_KEY,
         "endpoint": VOLC_ENDPOINT,
-        "model": (os.getenv("VOLC_ARK_MODEL_ID") or "ep-20250101-xxxx").strip()
+        "model": "doubao-seed-2-0-pro-260215"
+    },
+    "doubao-seed-2-0-pro": {
+        "name": "豆包 Doubao Seed 2.0 Pro (Coding Play)",
+        "api_key": VOLC_API_KEY,
+        "endpoint": VOLC_ENDPOINT,
+        "model": "doubao-seed-2-0-pro-260215",
+        "capabilities": ["text_generation", "reasoning", "coding"]
+    },
+    "ark-code-latest": {
+        "name": "火山方舟 Coding Plan (ark-code-latest)",
+        "api_key": VOLC_API_KEY,
+        "endpoint": VOLC_ENDPOINT,  # 火山方舟兼容 OpenAI 接口格式
+        "model": "ark-code-latest",
+        "capabilities": ["text_generation", "reasoning", "coding"]
     },
     "bailian": {
         "name": "阿里云百炼 (Qwen)",

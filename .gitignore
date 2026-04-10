@@ -16,5 +16,13 @@ output/.schema_checked_*.stamp
 output/admin_accounts.json
 output/admin-ui-agent-report-*.json
 output/admin-ui-agent-report-*.md
-frontend/admin/node_modules/
-frontend/admin/dist/
+output/*.db
+output/*.db-*
+output/article_images/
+output/wechat_accounts/
+.openclaw_cache/
+.autoinfo.db
+data.db
+admin.pid
+*.pid
+EOF

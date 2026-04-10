@@ -6,99 +6,46 @@ import hmac
 import hashlib
 import tempfile
 import base64
+import logging
 from datetime import datetime
 
 from modules.prompts import ROLES, DEFAULT_ROLE
 from modules.models import MODEL_POOL, DEFAULT_MODEL
+from modules.ai_caller import get_unified_caller
+
+# 配置日志
+logger = logging.getLogger("processor")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '[%(asctime)s] [PROCESSOR] %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+def _log_image_event(event_type: str, details: dict):
+    """记录图片生成事件"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    details_str = " | ".join([f"{k}={v}" for k, v in details.items()])
+    logger.info(f"[{event_type}] {details_str}")
+
 
 class ContentProcessor:
     def __init__(self, volc_ak=None, volc_sk=None):
         self.volc_ak = volc_ak
         self.volc_sk = volc_sk
+        self.ai_caller = get_unified_caller()
 
     def rewrite(self, article_data, role_key=DEFAULT_ROLE, model_key=DEFAULT_MODEL):
-        """调用 LLM 进行角色化改写"""
-        # 获取模型配置
-        model_cfg = MODEL_POOL.get(model_key, MODEL_POOL[DEFAULT_MODEL])
-        api_key = model_cfg.get("api_key")
-        endpoint = model_cfg.get("endpoint")
-        model_name = model_cfg.get("model")
-
-        if not api_key:
-            print(f"⚠️ 未配置 [{model_key}] 的 API 密钥，将跳过 AI 改写。")
-            return {
-                'title': article_data['title'],
-                'content': article_data['content_html'],
-                'digest': article_data['content_raw'][:100] + "...",
-                'originality': 0
-            }
-            
+        """调用 LLM 进行角色化改写（使用统一 AI 调用器，自动故障转移）"""
         role = ROLES.get(role_key, ROLES[DEFAULT_ROLE])
-        print(f"🤖 正在调用 AI [{model_cfg['name']}] 使用 [{role['name']}] 角色进行改写...")
+        print(f"🤖 正在调用 AI 使用 [{role['name']}] 角色进行改写...")
 
-        content_direction = self._first_non_empty_env("OPENCLAW_CONTENT_DIRECTION")
-        prompt_direction = self._first_non_empty_env("OPENCLAW_PROMPT_DIRECTION")
-        system_prompt = role["system_prompt"]
-        if prompt_direction:
-            system_prompt += (
-                "\n\n【账户提示词方向】\n"
-                f"{prompt_direction}\n"
-                "请在不偏离事实的前提下优先遵循该方向。"
-            )
-
-        user_prompt = (
-            f"请改写以下文章：\n"
-            f"标题：{article_data['title']}\n"
-            f"作者：{article_data['author']}\n"
-            f"内容：{article_data['content_raw']}"
-        )
-        if content_direction:
-            user_prompt += (
-                "\n\n【本篇内容方向】\n"
-                f"{content_direction}\n"
-                "请按该方向调整选题角度、论证重点与表达风格。"
-            )
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": 0.7
-        }
-        
-        # 诊断日志
-        masked_key = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else "无效密钥"
-        print(f"   [诊断] 调用模型: {model_name} | Endpoint: {endpoint}")
-        print(f"   [诊断] 密钥校验: {masked_key}")
-
-        try:
-            resp = requests.post(endpoint, headers=headers, json=payload, timeout=180)
-            result = resp.json()
-            if 'choices' in result:
-                ai_text = result['choices'][0]['message']['content']
-                return {
-                    'title': article_data['title'], 
-                    'content': ai_text,
-                    'digest': article_data['content_raw'][:100] + "...",
-                    'originality': 85
-                }
-            print(f"❌ AI 改写请求失败 (HTTP {resp.status_code}): {result}")
-        except Exception as e:
-            print(f"❌ AI 改写异常: {e}")
-
-        return {
-            'title': article_data['title'],
-            'content': article_data['content_html'],
-            'digest': article_data['content_raw'][:100] + "...",
-            'originality': 0
-        }
+        # 使用统一 AI 调用器，自动处理模型故障转移
+        return self.ai_caller.rewrite(article_data, role_key=role_key, preferred_model=model_key)
 
     def _first_non_empty_env(self, *keys):
         for key in keys:
@@ -143,6 +90,7 @@ class ContentProcessor:
 
     def _generate_cover_with_ark(self, prompt):
         """调用火山方舟图片生成（OpenAI 兼容 images API）。"""
+        start_time = time.time()
         api_key = self._first_non_empty_env("ARK_IMAGE_API_KEY", "VOLC_ARK_API_KEY", "LLM_API_KEY")
         endpoint = self._resolve_ark_image_endpoint()
         model = self._first_non_empty_env("ARK_IMAGE_MODEL", "VOLC_ARK_IMAGE_MODEL") or "doubao-seedream-5-0-260128"
@@ -150,8 +98,11 @@ class ContentProcessor:
         response_format = (os.getenv("ARK_IMAGE_RESPONSE_FORMAT") or "b64_json").strip()
 
         if not api_key or not endpoint:
+            _log_image_event("ARK_CONFIG_MISSING", {"has_key": bool(api_key), "has_endpoint": bool(endpoint)})
             print("   ℹ️ 方舟生图配置不完整（ARK_IMAGE_API_KEY / ARK_IMAGE_ENDPOINT），跳过。")
             return None
+        
+        _log_image_event("ARK_START", {"model": model, "size": size})
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {"model": model, "prompt": prompt, "size": size, "n": 1}
@@ -195,7 +146,9 @@ class ContentProcessor:
                 try:
                     image_bytes = base64.b64decode(first["b64_json"])
                     temp_file = self._save_temp_image_bytes(image_bytes, "ark_img")
-                    print(f"   ✨ 方舟生图完成: {temp_file}")
+                    elapsed = time.time() - start_time
+                    _log_image_event("ARK_IMAGE_SAVED", {"path": temp_file, "elapsed_sec": f"{elapsed:.2f}"})
+                    print(f"   ✨ 方舟生图完成: {temp_file} ({elapsed:.1f}s)")
                     return temp_file
                 except Exception as e:
                     print(f"   ⚠️ 方舟 b64 解析失败: {e}")
@@ -203,7 +156,9 @@ class ContentProcessor:
                 try:
                     image_bytes = base64.b64decode(first["image_base64"])
                     temp_file = self._save_temp_image_bytes(image_bytes, "ark_img")
-                    print(f"   ✨ 方舟生图完成: {temp_file}")
+                    elapsed = time.time() - start_time
+                    _log_image_event("ARK_IMAGE_SAVED", {"path": temp_file, "elapsed_sec": f"{elapsed:.2f}"})
+                    print(f"   ✨ 方舟生图完成: {temp_file} ({elapsed:.1f}s)")
                     return temp_file
                 except Exception as e:
                     print(f"   ⚠️ 方舟 image_base64 解析失败: {e}")
@@ -294,20 +249,32 @@ class ContentProcessor:
 
     def generate_cover(self, prompt):
         """封面生图路由：auto 优先方舟，失败回退即梦。"""
-        print(f"🎨 正在生成封面图: {prompt}")
+        start_time = time.time()
+        _log_image_event("COVER_GENERATE_START", {"prompt": prompt[:50]})
+        print(f"🎨 正在生成封面图: {prompt[:50]}...")
 
         provider = (os.getenv("COVER_IMAGE_PROVIDER") or "auto").strip().lower()
+
         if provider in {"auto", "ark", "volc_ark"}:
+            _log_image_event("COVER_TRY_ARK", {"provider": provider})
             cover_path = self._generate_cover_with_ark(prompt)
             if cover_path:
+                elapsed = time.time() - start_time
+                _log_image_event("COVER_ARK_SUCCESS", {"path": cover_path, "elapsed_sec": f"{elapsed:.2f}"})
                 return cover_path
             if provider in {"ark", "volc_ark"}:
+                _log_image_event("COVER_ARK_FAILED", {"reason": "ARK_ONLY_MODE"})
                 return None
 
+        _log_image_event("COVER_TRY_JIMENG", {"reason": "ARK_FAILED"})
         cover_path = self._generate_cover_with_jimeng(prompt)
         if cover_path:
+            elapsed = time.time() - start_time
+            _log_image_event("COVER_JIMENG_SUCCESS", {"path": cover_path, "elapsed_sec": f"{elapsed:.2f}"})
             return cover_path
 
+        elapsed = time.time() - start_time
+        _log_image_event("COVER_GENERATE_FAILED", {"elapsed_sec": f"{elapsed:.2f}"})
         print("   ⚠️ 封面生图未成功（方舟与即梦均不可用）")
         return None
 

@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 
 # 兼容 OpenClaw 运行方式：确保能从项目根目录找到 modules
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,19 +14,54 @@ from modules.discovery import DiscoverProcessor, ContentSearchAgent
 from modules.publisher import WeChatPublisher
 from modules.models import MODEL_POOL, get_runtime_default_model_key
 from modules.state_machine import PipelineState, canonical_pipeline_status, is_rewrite_stage, is_publish_stage
+from modules.workflow_store import WorkflowStore
 from config import Config
 
 from modules.feishu import FeishuBitable
 import time
 import re
 
+
+class PipelineTimeout:
+    """流水线全局超时控制器"""
+    def __init__(self, seconds=300):
+        self.seconds = seconds
+        self.original_handler = None
+
+    def _timeout_handler(self, signum, frame):
+        raise TimeoutError(f"Pipeline execution exceeded {self.seconds} seconds")
+
+    def __enter__(self):
+        try:
+            self.original_handler = signal.signal(signal.SIGALRM, self._timeout_handler)
+            signal.alarm(self.seconds)
+        except Exception:
+            pass  # Windows doesn't support SIGALRM
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            signal.alarm(0)
+            if self.original_handler:
+                signal.signal(signal.SIGALRM, self.original_handler)
+        except Exception:
+            pass
+        return False
+
+
+def _now_str():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
 class AutoPlatformManager:
     def __init__(self):
+        self.account_id = (os.getenv("OPENCLAW_ACCOUNT_ID") or "default").strip() or "default"
         self.feishu = FeishuBitable(
             app_id=Config.FEISHU_APP_ID,
             app_secret=Config.FEISHU_APP_SECRET,
             app_token=Config.FEISHU_APP_TOKEN
         )
+        self.workflow = WorkflowStore(Config.WORKFLOW_DB)
         self.processing_records = set()
         self.collector = ContentCollector()
         self.processor = ContentProcessor(volc_ak=Config.VOLCENGINE_AK, volc_sk=Config.VOLCENGINE_SK)
@@ -39,13 +75,9 @@ class AutoPlatformManager:
         )
         self.table_ids = {}
         self._refresh_table_cache()
-        self.smart_table_id = self.table_ids.get("pipeline")
-
-        if self._should_run_schema_check():
-            self._ensure_table_fields()
 
     def _refresh_table_cache(self):
-        """缓存核心表 ID，避免每次流程都重复扫全表列表。"""
+        """缓存灵感库表 ID，用于回写来源状态。"""
         tables = self.feishu.list_tables()
         if not tables:
             return
@@ -57,9 +89,7 @@ class AutoPlatformManager:
                     return t.get("table_id")
             return None
 
-        self.table_ids["pipeline"] = _pick_id([Config.FEISHU_PIPELINE_TABLE, "智能内容库", "自动化发布队列"])
         self.table_ids["inspiration"] = _pick_id([Config.FEISHU_INSPIRATION_TABLE, "内容灵感库"])
-        self.table_ids["publish_log"] = _pick_id([Config.FEISHU_PUBLISH_LOG_TABLE, "发布记录"])
 
     def _resolve_table_id(self, key, refresh=False):
         """按业务键获取表 ID，必要时自动刷新缓存。"""
@@ -144,9 +174,9 @@ class AutoPlatformManager:
         返回: (token, normalized_url, source_field)
         """
         candidates = [
-            ("改后文档链接", fields.get("改后文档链接")),
-            ("备注", fields.get("备注")),
-            ("原文文档链接", fields.get("原文文档链接")),
+            ("rewritten_doc", fields.get("rewritten_doc") or fields.get("改后文档链接")),
+            ("remark", fields.get("remark") or fields.get("备注")),
+            ("source_doc_url", fields.get("source_doc_url") or fields.get("原文文档链接")),
             ("原文文档", fields.get("原文文档")),
         ]
         for source_field, value in candidates:
@@ -155,25 +185,86 @@ class AutoPlatformManager:
                 return token, f"https://www.feishu.cn/docx/{token}", source_field
         return None, "", ""
 
-    def _update_pipeline_failure(self, table_id, record_id, status, reason):
-        """失败状态回写兜底：优先精细状态，失败则退化为通用失败，再退化为仅备注。"""
+    def _update_pipeline_failure(self, record_id, status, reason):
+        """失败状态回写到本地工作流。"""
         payload = {
-            "数据流程状态": status,
-            "备注": reason
+            "status": status or PipelineState.FAILED,
+            "remark": reason,
         }
-        if self.feishu.update_record(table_id, record_id, payload):
-            return True
+        return self.workflow.update_pipeline(record_id, **payload)
+    def _shorten_title_with_ai(self, title, max_bytes=60):
+        """使用AI将标题精简到指定字节数以内"""
+        from modules.ai_caller import get_unified_caller
 
-        # 某些单选字段可能不包含“❌ 改写失败/❌ 发布失败”
-        fallback_payload = {
-            "数据流程状态": PipelineState.FAILED,
-            "备注": reason
-        }
-        if self.feishu.update_record(table_id, record_id, fallback_payload):
-            return True
+        title_bytes = title.encode('utf-8')
+        if len(title_bytes) <= max_bytes:
+            return title
 
-        # 最后至少保留原因，防止“失败但无原因”问题
-        return self.feishu.update_record(table_id, record_id, {"备注": reason})
+        ai_caller = get_unified_caller()
+        messages = [
+            {"role": "system", "content": "你是一个专业的标题编辑。请将给定标题精简得更短，保留核心信息，不超过20个汉字。只输出精简后的标题，不要解释。"},
+            {"role": "user", "content": f"原标题：{title}\n\n请精简到20字以内："}
+        ]
+
+        try:
+            result = ai_caller.call_with_fallback(messages, temperature=0.3, task_type="shorten_title")
+            if result:
+                shortened = result.strip().strip('"\'').strip()
+                # 确保不超过字节限制
+                if len(shortened.encode('utf-8')) > max_bytes:
+                    # 直接截断
+                    shortened = shortened[:20].strip()
+                return shortened
+        except Exception as e:
+            print(f"   ⚠️ AI精简标题失败: {e}")
+
+        # 兜底：直接截断
+        return title[:20].strip() + "..." if len(title) > 20 else title
+
+    def _validate_content_for_publish(self, article):
+        """
+        验证内容是否适合发布，标题过长时自动精简。
+        返回: (is_valid, error_reason)
+        """
+        title = article.get('title', '') or ''
+        content = article.get('content_html', '') or article.get('content', '') or ''
+        content_raw = article.get('content_raw', '') or ''
+
+        # 1. 检查标题
+        if not title or title.strip() in ['', 'None', 'null', '未命名标题']:
+            return False, "标题为空或无效"
+
+        # 2. 检查标题长度（微信限制 64 字节），超长则自动精简
+        title_bytes = title.encode('utf-8')
+        if len(title_bytes) > 64:
+            print(f"   ✂️ 标题超长（{len(title_bytes)} 字节），AI精简中...")
+            original_title = title
+            title = self._shorten_title_with_ai(title, max_bytes=60)
+            article['title'] = title
+            print(f"   ✅ 标题已精简: {original_title[:30]}... → {title}")
+        
+        # 3. 检查内容是否为空
+        if not content or not content.strip():
+            return False, "内容为空"
+        
+        # 4. 检查实质内容长度（去除 HTML 标签后）
+        text_only = re.sub(r'<[^>]+>', '', content)
+        text_only = text_only.strip()
+        
+        if len(text_only) < 100:
+            return False, f"实质内容过少（{len(text_only)} 字，最少需要 100 字）"
+        
+        # 5. 检查是否有有效段落
+        paragraphs = [p.strip() for p in text_only.split('\n') if p.strip()]
+        if len(paragraphs) == 0:
+            return False, "没有有效的段落内容"
+        
+        # 6. 检查内容是否抓取完整
+        if content_raw and len(content_raw) < 50 and len(text_only) < 50:
+            return False, "内容可能抓取不完整"
+        
+        return True, "内容检查通过"
+
 
     def _normalize_model_key(self, raw_key):
         """标准化 model_key，支持别名。"""
@@ -210,8 +301,12 @@ class AutoPlatformManager:
         return ""
 
     def _resolve_pipeline_rewrite_config(self, fields):
-        """流水线改写配置：飞书字段优先，环境变量兜底。"""
-        raw_role = self._field_to_text(fields.get("改写角色")) or os.getenv("OPENCLAW_PIPELINE_ROLE", "tech_expert")
+        """流水线改写配置：本地记录优先，环境变量兜底。"""
+        raw_role = (
+            self._field_to_text(fields.get("role"))
+            or self._field_to_text(fields.get("改写角色"))
+            or os.getenv("OPENCLAW_PIPELINE_ROLE", "tech_expert")
+        )
         role_key = (raw_role or "tech_expert").strip()
         if not role_key:
             role_key = "tech_expert"
@@ -219,7 +314,7 @@ class AutoPlatformManager:
         default_model = (os.getenv("OPENCLAW_PIPELINE_MODEL") or "").strip()
         if not default_model:
             default_model = get_runtime_default_model_key()
-        model_key = self._normalize_model_key(fields.get("改写模型"))
+        model_key = self._normalize_model_key(fields.get("model") or fields.get("改写模型"))
         if not model_key:
             model_key = self._normalize_model_key(default_model)
         if not model_key:
@@ -227,51 +322,46 @@ class AutoPlatformManager:
 
         return role_key, model_key
 
-    def _ensure_table_fields(self):
-        """确保流水线表格包含必要的字段"""
-        try:
-            tid = self._resolve_table_id("pipeline", refresh=True)
-            if tid:
-                # 1: 文本 (使用文本确保 API 读取到的是完整 URL 而非标题)
-                self.feishu.create_field(tid, "原文文档链接", 1)
-                self.feishu.create_field(tid, "改后文档链接", 1)
-                self.feishu.create_field(tid, "改写模型", 1)
-                self.feishu.create_field(tid, "改写角色", 1)
-                self.feishu.create_field(tid, "备注", 1)
-                self._mark_schema_checked()
-        except Exception as e:
-            print(f"⚠️ 初始化流水线字段检查失败: {e}")
-
-    # --- 记录管理: 全链路同步至飞书三个表格 ---
-    def log_to_all_feishu_tables(self, data, source_record_id=None):
-        """将运行结果同步至：1.内容灵感库(溯源) 2.小龙虾智能内容库(流水线) 3.发布记录表(归档)"""
-        # 1. 更新 [内容灵感库] 的状态 (溯源)
+    def _mark_inspiration_processed(self, source_record_id: str = "", source_url: str = ""):
         inbox_table_id = self._resolve_table_id("inspiration")
-        if inbox_table_id and data.get("url"):
-            # 尝试通过“文章 URL”反查灵感库 ID
-            records = self.feishu.list_records(inbox_table_id).get('items', [])
-            for r in records:
-                fields = r.get('fields', {})
-                if fields.get('文章 URL') == data['url'] or fields.get('原链接') == data['url']:
-                    # 注意：原状态字段可能是“处理状态”或变种值，先保守写“已处理”
-                    self.feishu.update_record(inbox_table_id, r['record_id'], {"处理状态": "已处理"})
-                    break
+        if not inbox_table_id:
+            return
+        target_record_id = self._field_to_text(source_record_id)
+        if target_record_id:
+            self.feishu.update_record(inbox_table_id, target_record_id, {"处理状态": "已处理"})
+            return
+        if not source_url:
+            return
+        records = self.feishu.list_records(inbox_table_id).get('items', [])
+        for record in records:
+            fields = record.get('fields', {})
+            if fields.get('文章 URL') == source_url or fields.get('原链接') == source_url:
+                self.feishu.update_record(inbox_table_id, record['record_id'], {"处理状态": "已处理"})
+                break
 
-        # 2. 已在流水线中直接更新，无需额外逻辑
-        
-        # 3. 更新 [发布记录表] (最终发布清单)
-        publish_table_id = self._resolve_table_id("publish_log")
-        if publish_table_id:
-            publish_fields = {
-                "发布标题": data.get("title", ""),
-                "发布时间": int(time.time() * 1000),
-                "发布平台": "微信公众号",
-                "草稿/文章 ID": data.get("draft_id", ""),
-                "负责人": Config.WECHAT_AUTHOR or "System"
-            }
-            self.feishu.add_records(publish_table_id, [publish_fields])
-            
-        print(f"📊 已完成全链路数据同步。")
+    def log_publish_result(self, data, pipeline_record=None):
+        pipeline_record = pipeline_record or {}
+        self.workflow.add_publish_log({
+            "account_id": self.account_id,
+            "pipeline_record_id": pipeline_record.get("record_id", ""),
+            "title": data.get("title", ""),
+            "publish_status": "已发布",
+            "result": f"已同步至草稿箱 ID: {data.get('draft_id', '')}",
+            "remark": pipeline_record.get("remark", ""),
+            "url": data.get("url", "") or pipeline_record.get("url", ""),
+            "rewritten_doc": pipeline_record.get("rewritten_doc", ""),
+            "draft_id": data.get("draft_id", ""),
+            "published_at": _now_str(),
+            "extra": {
+                "platform": "微信公众号",
+                "owner": Config.WECHAT_AUTHOR or "System",
+            },
+        })
+        self._mark_inspiration_processed(
+            source_record_id=pipeline_record.get("source_record_id", ""),
+            source_url=data.get("url", "") or pipeline_record.get("url", ""),
+        )
+        print("📊 已完成本地工作流与来源状态同步。")
 
     # --- 步骤 1: 内容抓取 ---
     def step_collect(self, url):
@@ -392,21 +482,22 @@ class AutoPlatformManager:
 
         # 去重保护：如果已经有可读取的改后文档，则直接复用，避免重复调用模型
         if not force_rewrite:
-            existing_token = self._extract_doc_token(fields.get("改后文档链接"), fields.get("备注"))
+            existing_token = self._extract_doc_token(fields.get("rewritten_doc"), fields.get("remark"))
             if existing_token:
                 existing_meta = self.feishu.get_docx_meta(existing_token)
                 if existing_meta:
                     normalized_url = f"https://www.feishu.cn/docx/{existing_meta['document_id']}"
-                    self.feishu.update_record(fields.get('_table_id'), record_id, {
-                        "数据流程状态": PipelineState.REVIEW_READY,
-                        "改后文档链接": normalized_url,
-                        "备注": f"检测到已有改后稿，已跳过重复改写：{normalized_url}"
-                    })
+                    self.workflow.update_pipeline(
+                        record_id,
+                        status=PipelineState.REVIEW_READY,
+                        rewritten_doc=normalized_url,
+                        remark=f"检测到已有改后稿，已跳过重复改写：{normalized_url}",
+                    )
                     print(f"   ♻️ 检测到已有可用改后稿，跳过重复改写: {normalized_url}")
                     return
 
-        doc_link = fields.get("原文文档链接") or fields.get("原文文档")
-        url = fields.get("文章 URL")
+        doc_link = fields.get("source_doc_url") or fields.get("原文文档")
+        url = fields.get("url")
         
         article_data = None
         doc_token = self._extract_doc_token(doc_link)
@@ -423,9 +514,33 @@ class AutoPlatformManager:
 
         role_key, model_key = self._resolve_pipeline_rewrite_config(fields)
         print(f"   🧠 [流水线配置] role={role_key}, model={model_key}")
+        
+        # 保存原文内容到本地
+        self.workflow.save_article_content(
+            record_id=record_id,
+            account_id=self.account_id,
+            original_html=article_data.get('content', ''),
+            original_text=article_data.get('content_raw', ''),
+            original_data=article_data,
+            images=article_data.get('images', [])
+        )
+        
         rewritten = self.step_rewrite(article_data, role_key=role_key, model_key=model_key)
         if not rewritten:
             raise Exception("AI 改写返回空结果")
+        
+        # 保存改写后内容到本地
+        self.workflow.save_article_content(
+            record_id=record_id,
+            account_id=self.account_id,
+            original_html=article_data.get('content', ''),
+            original_text=article_data.get('content_raw', ''),
+            original_data=article_data,
+            rewritten_html=rewritten.get('content', ''),
+            rewritten_text=rewritten.get('content', ''),
+            rewritten_data=rewritten,
+            images=article_data.get('images', [])
+        )
 
         new_doc_id, new_doc_url = self.feishu.create_docx(title=f"【AI改后稿】{rewritten['title']}")
         if not new_doc_id or not new_doc_url:
@@ -444,16 +559,19 @@ class AutoPlatformManager:
             raise Exception(f"AI 改写文档链接无效: {new_doc_url}")
 
         normalized_url = f"https://www.feishu.cn/docx/{doc_token}"
-            
-        update_fields = {
-            "数据流程状态": PipelineState.REVIEW_READY,
-            "备注": f"AI 已生成草稿：{normalized_url}（模型: {model_key}）",
-            "改写模型": model_key,
-            "改写角色": role_key,
-            "改后文档链接": normalized_url
-        }
-        if not self.feishu.update_record(fields.get('_table_id'), record_id, update_fields):
-            raise Exception("改写结果回写飞书失败")
+
+        updated = self.workflow.update_pipeline(
+            record_id,
+            status=PipelineState.REVIEW_READY,
+            remark=f"AI 已生成草稿：{normalized_url}（模型: {model_key}）",
+            model=model_key,
+            role=role_key,
+            rewritten_doc=normalized_url,
+            title=rewritten.get("title") or fields.get("title") or "",
+            updated_at=_now_str(),
+        )
+        if not updated:
+            raise Exception("改写结果回写本地工作流失败")
 
     def run_pipeline_step_2(self, record_id, fields):
         """环节 2: 确认发布"""
@@ -463,23 +581,25 @@ class AutoPlatformManager:
             raise Exception("无法从‘改后文档链接/备注/原文文档链接’中解析有效 Feishu Doc Token")
 
         # 自动自愈：若 token 来自回退字段，补齐改后文档链接，便于后续发布流程稳定运行
-        if source_field != "改后文档链接":
-            old_remark = self._field_to_text(fields.get("备注"))
+        if source_field != "rewritten_doc":
+            old_remark = self._field_to_text(fields.get("remark"))
             marker = "[AutoBackfill]"
             repair_note = f"{marker} 发布阶段已从“{source_field}”回填改后文档链接：{normalized_url}"
             if marker in old_remark:
                 new_remark = old_remark
             else:
                 new_remark = f"{old_remark} {repair_note}".strip()
-            self.feishu.update_record(fields.get('_table_id'), record_id, {
-                "改后文档链接": normalized_url,
-                "备注": new_remark
-            })
+            self.workflow.update_pipeline(record_id, rewritten_doc=normalized_url, remark=new_remark, updated_at=_now_str())
 
         final_article = self.feishu.get_docx_content(doc_token)
         if not final_article:
             raise Exception(f"读取确认稿失败（token={doc_token}）")
-
+        
+        # 发布前内容完整性检查
+        is_valid, error_reason = self._validate_content_for_publish(final_article)
+        if not is_valid:
+            raise Exception(f"内容检查未通过: {error_reason}")
+        
         clean_title = re.sub(r'^【AI改后稿】\s*', '', final_article['title'])
         clean_title = re.sub(r'^[标题|Title][:：]\s*', '', clean_title)
         clean_title = re.sub(r'^#+\s*', '', clean_title).strip()
@@ -495,78 +615,207 @@ class AutoPlatformManager:
             raise Exception("微信草稿创建失败（未返回 draft_id）")
 
         if draft_id:
-            self.feishu.update_record(fields.get('_table_id'), record_id, {
-                "标题": clean_title,
-                "草稿 ID": draft_id,
-                "数据流程状态": PipelineState.PUBLISHED,
-                "备注": f"已同步至草稿箱 ID: {draft_id}"
-            })
-            self.log_to_all_feishu_tables({
-                "url": fields.get("文章 URL", ""),
+            updated = self.workflow.update_pipeline(
+                record_id,
+                title=clean_title,
+                draft_id=draft_id,
+                status=PipelineState.PUBLISHED,
+                remark=f"已同步至草稿箱 ID: {draft_id}",
+                published_at=_now_str(),
+                updated_at=_now_str(),
+            )
+            self.log_publish_result({
+                "url": fields.get("url", ""),
                 "title": clean_title,
                 "draft_id": draft_id
-            }, source_record_id=record_id)
+            }, pipeline_record=updated or fields)
 
     def run_with_params(self, url, role_key="tech_expert", model_key="auto"):
         """手动运行单篇文章的全流程"""
         resolved_model = self._normalize_model_key(model_key) or get_runtime_default_model_key()
+
+        # 创建采集任务
+        collect_task_id = self.workflow.create_plugin_task(
+            record_id="manual", account_id=self.account_id,
+            plugin_type="collect", params={"url": url}
+        )
+
+        pipeline_record = self.workflow.create_pipeline({
+            "account_id": self.account_id,
+            "source_type": "manual",
+            "title": "手动任务",
+            "url": url,
+            "status": PipelineState.REWRITE_RUNNING,
+            "role": role_key,
+            "model": resolved_model,
+            "remark": "手动创建任务，开始抓取原文。",
+            "owner": Config.WECHAT_AUTHOR or "System",
+            "created_at": _now_str(),
+            "updated_at": _now_str(),
+        })
         # 1. 采集
+        self.workflow.update_plugin_task(collect_task_id, status="running")
         article_data = self.step_collect(url)
         if not article_data:
+            self.workflow.update_plugin_task(collect_task_id, status="failed", error_msg="采集流程中断")
+            self._update_pipeline_failure(pipeline_record["record_id"], PipelineState.REWRITE_FAILED, "采集流程中断。")
             print("❌ 采集流程中断。")
             return
+        self.workflow.update_plugin_task(collect_task_id, status="success", result={"title": article_data.get("title"), "char_count": len(article_data.get('content_raw', ''))})
+        
+        # 保存原文内容到本地
+        self.workflow.save_article_content(
+            record_id=pipeline_record["record_id"],
+            account_id=self.account_id,
+            original_html=article_data.get('content', ''),
+            original_text=article_data.get('content_raw', ''),
+            original_data=article_data,
+            images=article_data.get('images', [])
+        )
         
         # 2. 改写
+        rewrite_task_id = self.workflow.create_plugin_task(
+            record_id=pipeline_record["record_id"], account_id=self.account_id,
+            plugin_type="ai_rewrite", params={"role": role_key, "model": resolved_model}
+        )
+        self.workflow.update_plugin_task(rewrite_task_id, status="running")
+
+        self.workflow.update_pipeline(
+            pipeline_record["record_id"],
+            title=article_data.get("title") or "未命名标题",
+            remark="原文采集完成，开始改写。",
+            updated_at=_now_str(),
+        )
         rewritten = self.step_rewrite(article_data, role_key, resolved_model)
         if not rewritten:
+            self.workflow.update_plugin_task(rewrite_task_id, status="failed", error_msg="AI 改写失败")
+            self._update_pipeline_failure(pipeline_record["record_id"], PipelineState.REWRITE_FAILED, "AI 改写流程中断。")
             print("❌ AI 改写流程中断。")
             return
+        self.workflow.update_plugin_task(rewrite_task_id, status="success", result={"title": rewritten.get("title"), "originality": rewritten.get("originality", 0)})
         
+        # 保存改写后内容到本地
+        self.workflow.save_article_content(
+            record_id=pipeline_record["record_id"],
+            account_id=self.account_id,
+            original_html=article_data.get('content', ''),
+            original_text=article_data.get('content_raw', ''),
+            original_data=article_data,
+            rewritten_html=rewritten.get('content', ''),
+            rewritten_text=rewritten.get('content', ''),
+            rewritten_data=rewritten,
+            images=article_data.get('images', [])
+        )
+
+        new_doc_id, new_doc_url = self.feishu.create_docx(title=f"【AI改后稿】{rewritten['title']}")
+        if not new_doc_id or not new_doc_url:
+            self._update_pipeline_failure(pipeline_record["record_id"], PipelineState.REWRITE_FAILED, "AI 改写文档创建失败。")
+            print("❌ AI 改写文档创建失败。")
+            return
+
+        self.feishu.set_tenant_manageable(new_doc_id)
+        admin_id = os.getenv("FEISHU_ADMIN_USER_ID")
+        if admin_id:
+            self.feishu.add_collaborator(new_doc_id, admin_id, "full_access")
+        blocks, _ = self.feishu.html_to_docx_blocks(rewritten['content'], new_doc_id)
+        if blocks and not self.feishu.append_docx_blocks(new_doc_id, blocks):
+            self._update_pipeline_failure(pipeline_record["record_id"], PipelineState.REWRITE_FAILED, "AI 改写文档写入失败。")
+            print("❌ AI 改写文档写入失败。")
+            return
+
+        doc_token = self._extract_doc_token(new_doc_url)
+        if not doc_token:
+            self._update_pipeline_failure(pipeline_record["record_id"], PipelineState.REWRITE_FAILED, "AI 改写文档链接无效。")
+            print("❌ AI 改写文档链接无效。")
+            return
+
+        normalized_url = f"https://www.feishu.cn/docx/{doc_token}"
+        pipeline_record = self.workflow.update_pipeline(
+            pipeline_record["record_id"],
+            title=rewritten.get("title") or article_data.get("title") or "未命名标题",
+            rewritten_doc=normalized_url,
+            status=PipelineState.PUBLISH_RUNNING,
+            remark=f"AI 已生成草稿：{normalized_url}（模型: {resolved_model}），开始发布。",
+            role=role_key,
+            model=resolved_model,
+            updated_at=_now_str(),
+        ) or pipeline_record
+
         # 3. 发布
+        publish_task_id = self.workflow.create_plugin_task(
+            record_id=pipeline_record["record_id"], account_id=self.account_id,
+            plugin_type="publish", params={"title": rewritten.get("title")}
+        )
+        self.workflow.update_plugin_task(publish_task_id, status="running")
+
         draft_id = self.step_publish(rewritten, article_data.get('images', []))
         
         if draft_id:
+            self.workflow.update_plugin_task(publish_task_id, status="success", result={"draft_id": draft_id})
+            pipeline_record = self.workflow.update_pipeline(
+                pipeline_record["record_id"],
+                draft_id=draft_id,
+                status=PipelineState.PUBLISHED,
+                remark=f"已同步至草稿箱 ID: {draft_id}",
+                published_at=_now_str(),
+                updated_at=_now_str(),
+            ) or pipeline_record
             print(f"\n✨ 手动任务执行成功！草稿 ID: {draft_id}")
-            # 同步数据
-            self.log_to_all_feishu_tables({
+            self.log_publish_result({
                 "url": url,
                 "title": rewritten['title'],
                 "draft_id": draft_id
-            })
+            }, pipeline_record=pipeline_record)
         else:
+            self.workflow.update_plugin_task(publish_task_id, status="failed", error_msg="微信发布失败")
+            self._update_pipeline_failure(pipeline_record["record_id"], PipelineState.PUBLISH_FAILED, "微信发布流程中断。")
             print("❌ 微信发布流程中断。")
 
     def run_pipeline_once(self):
-        """执行单次全流水线巡检"""
-        pipeline_table_id = self._resolve_table_id("pipeline", refresh=True)
-        if not pipeline_table_id:
-            print("⚠️ 未找到流水线表，跳过本轮巡检。")
-            return
-
-        records_data = self.feishu.list_records(pipeline_table_id)
+        """执行单次全流水线巡检（带全局5分钟超时保护）"""
         try:
             batch_size = int(os.getenv("OPENCLAW_PIPELINE_BATCH_SIZE", "3"))
         except Exception:
             batch_size = 3
 
+        records = self.workflow.list_pipeline_pending(
+            self.account_id,
+            [
+                PipelineState.QUEUED_REWRITE,
+                PipelineState.REWRITE_RUNNING,
+                PipelineState.PUBLISH_READY,
+                PipelineState.PUBLISH_RUNNING,
+            ],
+            batch_size,
+        )
+        if not records:
+            print("😴 本地写作链暂无待处理任务。")
+            return
+
         handled = 0
-        for record in records_data.get('items', []):
-            fields = record.get('fields', {})
-            status = canonical_pipeline_status(fields.get('数据流程状态', ''))
-            record_id = record.get('record_id')
-            if record_id in self.processing_records: continue
-            fields['_table_id'] = pipeline_table_id
+        for fields in records:
+            status = canonical_pipeline_status(fields.get('status', ''))
+            record_id = fields.get('record_id')
+            if record_id in self.processing_records:
+                continue
 
             if is_rewrite_stage(status):
-                print(f"🚀 开始改写: {fields.get('标题')}")
+                print(f"🚀 开始改写: {fields.get('title')}")
                 try:
-                    self.feishu.update_record(fields['_table_id'], record_id, {"数据流程状态": PipelineState.REWRITE_RUNNING})
-                    self.processing_records.add(record_id)
-                    self.run_pipeline_step_1(record_id, fields)
+                    with PipelineTimeout(seconds=300):  # 5分钟超时保护
+                        self.workflow.update_pipeline(record_id, status=PipelineState.REWRITE_RUNNING, updated_at=_now_str())
+                        self.processing_records.add(record_id)
+                        self.run_pipeline_step_1(record_id, fields)
+                except TimeoutError as e:
+                    print(f"⏱️ 改写超时: {e}")
+                    self._update_pipeline_failure(
+                        record_id,
+                        PipelineState.REWRITE_FAILED,
+                        f"AI 改写超时（超过5分钟），请检查网络或模型可用性"
+                    )
                 except Exception as e:
                     print(f"❌ 改写步骤异常: {e}")
                     self._update_pipeline_failure(
-                        fields['_table_id'],
                         record_id,
                         PipelineState.REWRITE_FAILED,
                         f"AI 改写或排版失败，原因: {str(e)}"
@@ -577,15 +826,22 @@ class AutoPlatformManager:
                 handled += 1
 
             elif is_publish_stage(status):
-                print(f"📤 开始发布: {fields.get('标题')}")
+                print(f"📤 开始发布: {fields.get('title')}")
                 try:
-                    self.feishu.update_record(fields['_table_id'], record_id, {"数据流程状态": PipelineState.PUBLISH_RUNNING})
-                    self.processing_records.add(record_id)
-                    self.run_pipeline_step_2(record_id, fields)
+                    with PipelineTimeout(seconds=120):  # 2分钟超时保护
+                        self.workflow.update_pipeline(record_id, status=PipelineState.PUBLISH_RUNNING, updated_at=_now_str())
+                        self.processing_records.add(record_id)
+                        self.run_pipeline_step_2(record_id, fields)
+                except TimeoutError as e:
+                    print(f"⏱️ 发布超时: {e}")
+                    self._update_pipeline_failure(
+                        record_id,
+                        PipelineState.PUBLISH_FAILED,
+                        f"发布操作超时（超过2分钟）"
+                    )
                 except Exception as e:
                     print(f"❌ 发布步骤异常: {e}")
                     self._update_pipeline_failure(
-                        fields['_table_id'],
                         record_id,
                         PipelineState.PUBLISH_FAILED,
                         f"推送到微信失败，原因: {str(e)}"
@@ -607,18 +863,76 @@ class AutoPlatformManager:
             except Exception as e: print(f"❌ 循环异常: {e}")
             time.sleep(interval)
 
-if __name__ == "__main__":
-    manager = AutoPlatformManager()
-    if len(sys.argv) < 2:
-        sys.exit(1)
+    def publish_from_inspiration(self, record_id, title):
+        """从灵感库发布文章到微信"""
+        from modules.article_state import ArticleState
+        
+        print(f"📤 开始发布记录: {record_id}")
+        
+        # 获取文章内容
+        content = self.workflow.get_article_content(record_id, self.account_id)
+        if not content:
+            print(f"❌ 文章内容不存在: {record_id}")
+            return False
+        
+        # 获取改写后的内容
+        rewritten_data = {
+            "title": title or content.get("rewritten_data", {}).get("title", "未命名"),
+            "content": content.get("rewritten_html", content.get("original_html", "")),
+            "digest": content.get("rewritten_data", {}).get("digest", "")[:54] + "..." if len(content.get("rewritten_data", {}).get("digest", "")) > 54 else content.get("rewritten_data", {}).get("digest", "")
+        }
+        
+        # 执行发布
+        try:
+            draft_id = self.step_publish(rewritten_data, content.get("images", []))
+            if draft_id:
+                print(f"✅ 发布成功，草稿ID: {draft_id}")
+                # 更新灵感库状态
+                self.workflow.upsert_inspiration({
+                    "record_id": record_id,
+                    "account_id": self.account_id,
+                    "status": ArticleState.PUBLISHED,
+                    "remark": f"已发布到微信，草稿ID: {draft_id}",
+                })
+                return True
+            else:
+                print("❌ 发布失败")
+                return False
+        except Exception as e:
+            print(f"❌ 发布异常: {e}")
+            return False
 
-    cmd = sys.argv[1]
-    if cmd == "pipeline":
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="AutoInfo Platform Manager")
+    parser.add_argument("cmd", help="命令: pipeline, pipeline-once, publish, 或文章URL")
+    parser.add_argument("role", nargs="?", default=os.getenv("OPENCLAW_ROLE", "tech_expert"), help="角色")
+    parser.add_argument("model", nargs="?", default=os.getenv("OPENCLAW_MODEL", "auto"), help="模型")
+    parser.add_argument("--account-id", dest="account_id", default=os.getenv("OPENCLAW_ACCOUNT_ID", "default"), help="账户ID")
+    parser.add_argument("--record-id", dest="record_id", default=None, help="记录ID（用于发布）")
+    parser.add_argument("--title", dest="title", default=None, help="文章标题（用于发布）")
+    
+    args = parser.parse_args()
+    
+    # 设置环境变量供 AutoPlatformManager 读取
+    os.environ["OPENCLAW_ACCOUNT_ID"] = args.account_id
+    
+    manager = AutoPlatformManager()
+    
+    if args.cmd == "pipeline":
         manager.start_pipeline_loop()
-    elif cmd == "pipeline-once":
+    elif args.cmd == "pipeline-once":
         manager.run_pipeline_once()
+    elif args.cmd == "publish":
+        # 发布模式
+        if args.record_id and args.title:
+            success = manager.publish_from_inspiration(args.record_id, args.title)
+            sys.exit(0 if success else 1)
+        else:
+            print("❌ 发布模式需要 --record-id 和 --title 参数")
+            sys.exit(1)
     else:
         # 单篇模式参数优先级：CLI > OPENCLAW_* 环境变量 > 默认值
-        role = sys.argv[2] if len(sys.argv) > 2 else os.getenv("OPENCLAW_ROLE", "tech_expert")
-        model = sys.argv[3] if len(sys.argv) > 3 else os.getenv("OPENCLAW_MODEL", "auto")
-        manager.run_with_params(cmd, role, model)
+        manager.run_with_params(args.cmd, args.role, args.model)

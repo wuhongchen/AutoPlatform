@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { dashboardApi } from '../lib/api'
 
 const props = defineProps({
@@ -8,8 +8,9 @@ const props = defineProps({
   accounts: { type: Array, default: () => [] },
   activeAccountId: { type: String, default: '' },
   initialJobId: { type: String, default: '' },
+  pipelineItems: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['refresh'])
+const emit = defineEmits(['refresh', 'run-selected', 'run-pipeline', 'open-job'])
 
 const busy = ref(false)
 const loadingDetail = ref(false)
@@ -23,8 +24,6 @@ const keyword = ref('')
 const selectedJobId = ref('')
 const selectedDetail = ref(null)
 
-const demoUrl = ref('')
-const demoSkipPublish = ref(true)
 
 const accountNameMap = computed(() => {
   const out = {}
@@ -125,6 +124,78 @@ function shortCommand(command) {
   return `${text.slice(0, 72)}...`
 }
 
+// 异常追踪相关逻辑
+function normalizePipelineStage(status) {
+  const map = {
+    'pending': '待处理',
+    'analyzed': '待改写',
+    'rewritten': '待排版',
+    'formatted': '待发布',
+    'published': '已发布',
+    'failed': '处理失败',
+    'skipped': '已跳过'
+  }
+  return map[status] || status || '未知'
+}
+
+function validDocUrl(url) {
+  return /^https?:\/\/(www\.)?feishu\.cn\/docx\/[A-Za-z0-9]{20,}/.test(String(url || '').trim())
+}
+
+function validHttpUrl(url) {
+  return /^https?:\/\//.test(String(url || '').trim())
+}
+
+function classifyPipelineItem(item) {
+  const stage = normalizePipelineStage(item.status)
+  const remark = String(item.remark || '')
+  const rewritten = String(item.rewritten_doc || '').trim()
+  const hasDocIssue = !rewritten || !validDocUrl(rewritten)
+
+  if (hasDocIssue && (stage.includes('发布') || stage.includes('失败') || remark.includes('文档'))) {
+    return '改后文档链接异常'
+  }
+  if ((stage.includes('失败') || remark.includes('发布失败') || remark.includes('发布')) && !stage.includes('待')) {
+    if (remark.includes('发布') || stage.includes('发布')) return '发布失败'
+    return '改写失败'
+  }
+  return '待排查异常'
+}
+
+const traceItems = computed(() => {
+  return props.pipelineItems
+    .filter((item) => {
+      const stage = normalizePipelineStage(item.status)
+      const remark = String(item.remark || '')
+      const rewritten = String(item.rewritten_doc || '').trim()
+      const badDoc = !rewritten || !validDocUrl(rewritten)
+      return stage.includes('失败') || remark.includes('失败') || badDoc
+    })
+    .map((item) => ({
+      ...item,
+      trace_type: classifyPipelineItem(item),
+      stage: normalizePipelineStage(item.status),
+      bad_doc: !String(item.rewritten_doc || '').trim() || !validDocUrl(item.rewritten_doc),
+    }))
+})
+
+const failedJobs = computed(() => (props.jobs || []).filter((it) => it.status === 'failed'))
+
+const traceStats = computed(() => {
+  const rewriteFailed = traceItems.value.filter((it) => it.trace_type === '改写失败').length
+  const publishFailed = traceItems.value.filter((it) => it.trace_type === '发布失败').length
+  const docInvalid = traceItems.value.filter((it) => it.trace_type === '改后文档链接异常').length
+  return {
+    rewriteFailed,
+    publishFailed,
+    docInvalid,
+    failedJobs: failedJobs.value.length,
+  }
+})
+
+// 视图切换：all / trace
+const viewMode = ref('all')
+
 async function withBusy(fn) {
   busy.value = true
   errorMessage.value = ''
@@ -163,53 +234,6 @@ async function loadJobDetail(jobId) {
   }
 }
 
-async function runInspirationScan() {
-  if (!props.activeAccountId) return
-  await withBusy(async () => {
-    const data = await dashboardApi.runInspirationScan(props.activeAccountId)
-    selectedJobId.value = String(data.job_id || '')
-    setInfo(`已提交灵感扫描任务：${data.job_id}`)
-    emit('refresh')
-  })
-}
-
-async function runPipelineOnce() {
-  if (!props.activeAccountId) return
-  await withBusy(async () => {
-    const data = await dashboardApi.runPipeline(props.activeAccountId)
-    selectedJobId.value = String(data.job_id || '')
-    setInfo(`已提交流水线任务：${data.job_id}`)
-    emit('refresh')
-  })
-}
-
-async function runFullInspection() {
-  if (!props.activeAccountId) return
-  await withBusy(async () => {
-    const data = await dashboardApi.runFullInspection(props.activeAccountId)
-    selectedJobId.value = String(data.job_id || '')
-    setInfo(`已提交全流程巡检任务：${data.job_id}`)
-    emit('refresh')
-  })
-}
-
-async function runFullDemo() {
-  const url = String(demoUrl.value || '').trim()
-  if (!url) {
-    setError(new Error('请先填写 Demo URL'))
-    return
-  }
-  await withBusy(async () => {
-    const data = await dashboardApi.runFullDemo({
-      account_id: props.activeAccountId,
-      url,
-      skip_publish: !!demoSkipPublish.value,
-    })
-    selectedJobId.value = String(data.job_id || '')
-    setInfo(`已提交全流程 Demo：${data.job_id}`)
-    emit('refresh')
-  })
-}
 
 watch(
   () => props.activeAccountId,
@@ -246,25 +270,61 @@ watch(
   },
   { immediate: true }
 )
+
+// 自动刷新任务状态
+const refreshTimer = ref(null)
+
+onMounted(() => {
+  // 每3秒自动刷新一次任务状态
+  refreshTimer.value = setInterval(() => {
+    // 如果有正在运行的任务，触发父组件刷新
+    if (props.jobs.some(job => job.status === 'running' || job.status === 'queued')) {
+      emit('refresh')
+    }
+  }, 3000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer.value) {
+    clearInterval(refreshTimer.value)
+  }
+})
 </script>
 
 <template>
   <section class="page-section">
     <div class="page-headline page-headline-row">
       <div>
-        <h1>发布日志</h1>
-        <p>按任务维度查看全流程执行记录，支持筛选、详情排查与快速重试动作。</p>
+        <h1>任务中心</h1>
+        <p>整合任务执行日志、发布记录与异常追踪，统一管理全流程任务，支持排查与快速重试。</p>
       </div>
       <div class="page-actions">
         <button class="ghost-btn" :disabled="busy" @click="emit('refresh')">刷新任务</button>
-        <button class="ghost-btn" :disabled="busy" @click="runInspirationScan">灵感库扫描</button>
-        <button class="ghost-btn" :disabled="busy" @click="runFullInspection">全流程单次巡检</button>
-        <button class="primary-btn" :disabled="busy" @click="runPipelineOnce">流水线单次巡检</button>
       </div>
     </div>
 
     <div v-if="errorMessage" class="global-error">{{ errorMessage }}</div>
     <div v-if="message" class="global-info">{{ message }}</div>
+
+    <!-- 异常统计面板 -->
+    <div class="metrics-grid metrics-grid-trace" style="margin-bottom: 20px;">
+      <article class="metric-card bad">
+        <div class="metric-head"><h3>改写失败</h3></div>
+        <div class="metric-value">{{ traceStats.rewriteFailed }}</div>
+      </article>
+      <article class="metric-card bad">
+        <div class="metric-head"><h3>发布失败</h3></div>
+        <div class="metric-value">{{ traceStats.publishFailed }}</div>
+      </article>
+      <article class="metric-card warn">
+        <div class="metric-head"><h3>文档链接失效</h3></div>
+        <div class="metric-value">{{ traceStats.docInvalid }}</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-head"><h3>任务失败</h3></div>
+        <div class="metric-value">{{ traceStats.failedJobs }}</div>
+      </article>
+    </div>
 
     <div class="panel-card">
       <div class="publish-filter-row">
@@ -291,14 +351,6 @@ watch(
         </label>
       </div>
 
-      <div class="publish-demo-row">
-        <input v-model="demoUrl" type="text" placeholder="Demo URL（公众号或飞书文档）" />
-        <label class="checkbox-inline">
-          <input v-model="demoSkipPublish" type="checkbox" />
-          Demo 跳过发布
-        </label>
-        <button class="ghost-btn" :disabled="busy || !activeAccountId" @click="runFullDemo">全流程 Demo</button>
-      </div>
     </div>
 
     <div class="publish-grid">

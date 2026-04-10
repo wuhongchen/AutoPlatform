@@ -11,14 +11,15 @@ from dotenv import load_dotenv
 from config import Config
 from modules.feishu import FeishuBitable
 from modules.inspiration.collector import InspirationCollector
-from modules.inspiration.analyzer import InspirationAnalyzer
+
 from modules.inspiration.sync_engine import InspirationSyncEngine
 
 class InspirationManager:
     """
     灵感库主控程序
     """
-    def __init__(self):
+    def __init__(self, account_id=None):
+        self.account_id = account_id or (os.getenv("OPENCLAW_ACCOUNT_ID") or "default").strip() or "default"
         # 初始化飞书客户端
         self.feishu = FeishuBitable(
             Config.FEISHU_APP_ID, 
@@ -26,13 +27,16 @@ class InspirationManager:
             Config.FEISHU_APP_TOKEN
         )
         
+        # 初始化工作流存储
+        from modules.workflow_store import WorkflowStore
+        self.workflow_store = WorkflowStore(Config.WORKFLOW_DB)
+        
         # 获取表格 ID
         self.inspiration_table_id = self.feishu.get_table_id_by_name(Config.FEISHU_INSPIRATION_TABLE) or self.feishu.get_table_id_by_name("内容灵感库")
         self.pipeline_table_id = self.feishu.get_table_id_by_name(Config.FEISHU_PIPELINE_TABLE) or self.feishu.get_table_id_by_name("小龙虾智能内容库")
         
         # 初始化组件
         self.collector = InspirationCollector()
-        self.analyzer = InspirationAnalyzer()
         self.sync_engine = InspirationSyncEngine(self.feishu, self.inspiration_table_id, self.pipeline_table_id)
 
         # 自动化字段初始化：确保灵感库有这些关键字段
@@ -137,9 +141,9 @@ class InspirationManager:
             })
             return
         
-        # 2. 分析
-        if not article.get('title'): article['title'] = "未命名文章"
-        analysis = self.analyzer.analyze(article)
+        # 2. 设置标题
+        if not article.get('title'):
+            article['title'] = "未命名文章"
         
         # 3. 创建飞书文档并解析 HTML 回写格式 (支持图片转存)
         doc_id, doc_url = self.feishu.create_docx(title=f"【灵感原文】{article['title']}")
@@ -172,10 +176,7 @@ class InspirationManager:
 
         # 5. 回写飞书多维表格 (增加字段检查)
         update_fields = {
-            "标题": analysis.get('title_zh', article.get('title', '未命名')), # 优先使用中文译名
-            "AI 爆款潜力评分": analysis['score'],
-            "AI 推荐理由": analysis['reason'],
-            "建议改写方向": analysis['rewrite_direction'],
+            "标题": article.get('title', '未命名'),
             "处理状态": "待审" 
         }
 
@@ -185,21 +186,9 @@ class InspirationManager:
         if doc_url and "原文文档" in existing_cols:
             update_fields["原文文档"] = doc_url
 
-        # 扩展新字段
-        extra_map = {
-            "核心洞察": analysis.get('insight', ''),
-            "所属领域": analysis.get('domain', ''),
-            "原始标题": article.get('title', ''),
-            "同步时间": int(time.time() * 1000)
-        }
-        for k, v in extra_map.items():
-            if k in existing_cols:
-                update_fields[k] = v
-
-        # 6. 自动化过滤：如果评分过低，直接跳过，减少噪音
-        if analysis['score'] < 6:
-            print(f"📉 评分较低 ({analysis['score']})，自动标记为 [已跳过]")
-            update_fields["处理状态"] = "已跳过"
+        # 6. 设置同步时间
+        if "同步时间" in existing_cols:
+            update_fields["同步时间"] = int(time.time() * 1000)
         
         # 如果有图片，写入附件字段
         img_field = "图片" if "图片" in existing_cols else ("素材" if "素材" in existing_cols else None)
@@ -228,6 +217,198 @@ class InspirationManager:
                 print(f"❌ 循环执行异常: {e}")
             time.sleep(interval)
 
+    def rewrite_one(self, record_id, role="tech_expert", model="auto"):
+        """改写单条灵感库记录"""
+        from modules.article_state import ArticleState
+        from modules.processor import ContentProcessor
+        from modules.models import get_runtime_default_model_key
+        
+        print(f"✍️ 开始改写记录: {record_id}")
+        
+        # 获取记录
+        item = self.workflow_store.get_inspiration(record_id, self.account_id)
+        if not item:
+            print(f"❌ 记录不存在: {record_id}")
+            return False
+        
+        # 获取文章内容
+        content = self.workflow_store.get_article_content(record_id, self.account_id)
+        if not content:
+            print(f"❌ 文章内容不存在: {record_id}")
+            return False
+        
+        # 准备文章数据 - 传递 HTML 内容和图片
+        article_data = {
+            "title": content.get("original_data", {}).get("title", item.get("title", "未命名")),
+            "content_html": content.get("original_html", ""),
+            "content_raw": content.get("original_text", ""),
+            "url": item.get("url", ""),
+            "images": content.get("images", []),
+        }
+        
+        # 更新状态为改写中
+        self.workflow_store.upsert_inspiration({
+            "record_id": record_id,
+            "account_id": self.account_id,
+            "status": ArticleState.REWRITING,
+            "remark": f"AI改写中 (模型: {model}, 角色: {role})",
+        })
+        
+        # 创建改写任务
+        rewrite_task_id = self.workflow_store.create_plugin_task(
+            record_id=record_id,
+            account_id=self.account_id,
+            plugin_type="ai_rewrite",
+            params={"role": role, "model": model}
+        )
+        self.workflow_store.update_plugin_task(rewrite_task_id, status="running")
+        
+        # 执行改写
+        processor = ContentProcessor(
+            volc_ak=Config.VOLCENGINE_AK,
+            volc_sk=Config.VOLCENGINE_SK
+        )
+        
+        try:
+            rewritten = processor.rewrite(article_data, role_key=role, model_key=model)
+            if not rewritten:
+                raise Exception("AI 改写返回空结果")
+            
+            # 保存改写后内容
+            self.workflow_store.save_article_content(
+                record_id=record_id,
+                account_id=self.account_id,
+                original_html=content.get("original_html", ""),
+                original_text=content.get("original_text", ""),
+                original_data=content.get("original_data", {}),
+                rewritten_html=rewritten.get("content", ""),
+                rewritten_text=rewritten.get("content", ""),
+                rewritten_data=rewritten,
+                images=content.get("images", []))
+            
+            # 更新任务状态
+            self.workflow_store.update_plugin_task(rewrite_task_id, status="success", result={
+                "title": rewritten.get("title"),
+                "originality": rewritten.get("originality", 0)
+            })
+            
+            # 更新灵感库状态
+            self.workflow_store.upsert_inspiration({
+                "record_id": record_id,
+                "account_id": self.account_id,
+                "status": ArticleState.REWRITTEN,
+                "remark": f"AI改写完成，原创度: {rewritten.get('originality', 0)}%",
+            })
+            
+            print(f"✅ 改写完成: {rewritten.get('title')}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 改写失败: {e}")
+            self.workflow_store.update_plugin_task(rewrite_task_id, status="failed", error_msg=str(e))
+            self.workflow_store.upsert_inspiration({
+                "record_id": record_id,
+                "account_id": self.account_id,
+                "status": ArticleState.REWRITE_FAILED,
+                "remark": f"改写失败: {str(e)}",
+            })
+            return False
+    
+    def collect_one(self, record_id):
+        """采集单条灵感库记录（本地数据库版本）"""
+        from modules.article_state import ArticleState
+        from modules.inspiration.collector import InspirationCollector
+        
+        print(f"📥 开始采集记录: {record_id}")
+        
+        # 获取记录
+        item = self.workflow_store.get_inspiration(record_id, self.account_id)
+        if not item:
+            print(f"❌ 记录不存在: {record_id}")
+            return False
+        
+        url = item.get("url")
+        if not url:
+            print(f"❌ 记录没有URL: {record_id}")
+            return False
+        
+        # 更新状态为采集中
+        self.workflow_store.upsert_inspiration({
+            "record_id": record_id,
+            "account_id": self.account_id,
+            "status": ArticleState.COLLECTING,
+            "remark": "正在采集内容...",
+        })
+        
+        try:
+            # 采集内容
+            collector = InspirationCollector()
+            article = collector.fetch(url, article_id=record_id)
+            
+            if not article:
+                raise Exception("页面抓取失败")
+            
+            # 保存内容到 article_contents
+            self.workflow_store.save_article_content(
+                record_id=record_id,
+                account_id=self.account_id,
+                original_html=article.get("content_html", ""),
+                original_text=article.get("content_raw", ""),
+                original_data={
+                    "title": article.get("title", item.get("title", "未命名")),
+                    "author": article.get("author", ""),
+                    "url": url,
+                    "images": article.get("images", []),
+                },
+                images=article.get("images", []),
+                files_dir=article.get("files_dir", ""),
+            )
+            
+            # 更新灵感库状态为采集完成
+            self.workflow_store.upsert_inspiration({
+                "record_id": record_id,
+                "account_id": self.account_id,
+                "title": article.get("title", item.get("title", "未命名")),
+                "status": ArticleState.COLLECTED,
+                "remark": f"采集完成，{len(article.get('images', []))}张图片",
+            })
+            
+            print(f"✅ 采集完成: {article.get('title', '未命名')} ({len(article.get('content_raw', ''))}字, {len(article.get('images', []))}图)")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 采集失败: {e}")
+            # 更新状态为采集失败
+            self.workflow_store.upsert_inspiration({
+                "record_id": record_id,
+                "account_id": self.account_id,
+                "status": ArticleState.COLLECT_FAILED,
+                "remark": f"采集失败: {str(e)}",
+            })
+            return False
+
+
 if __name__ == "__main__":
-    manager = InspirationManager()
-    manager.start_loop()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Inspiration Manager")
+    parser.add_argument("command", nargs="?", help="命令: run-once, rewrite-one, collect-one")
+    parser.add_argument("record_id", nargs="?", help="记录ID")
+    parser.add_argument("--account-id", dest="account_id", default=None, help="账户ID")
+    parser.add_argument("--role", dest="role", default="tech_expert", help="改写角色")
+    parser.add_argument("--model", dest="model", default="auto", help="AI模型")
+    
+    args = parser.parse_args()
+    
+    manager = InspirationManager(account_id=args.account_id)
+    
+    if args.command == "rewrite-one" and args.record_id:
+        success = manager.rewrite_one(args.record_id, role=args.role, model=args.model)
+        sys.exit(0 if success else 1)
+    elif args.command == "collect-one" and args.record_id:
+        success = manager.collect_one(args.record_id)
+        sys.exit(0 if success else 1)
+    elif args.command == "run-once":
+        manager.run_once()
+    else:
+        manager.start_loop()

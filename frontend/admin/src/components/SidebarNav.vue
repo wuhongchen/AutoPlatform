@@ -9,11 +9,7 @@ const emit = defineEmits(['change'])
 <template>
   <aside class="sidebar-shell">
     <div class="brand-block">
-      <div class="brand-badge">🦞</div>
-      <div>
-        <div class="brand-title">WeChat 运营台</div>
-        <div class="brand-subtitle">Vue 标准化后台架构</div>
-      </div>
+      <div class="brand-title">AutoInfo 运营台</div>
     </div>
 
     <nav class="nav-list">

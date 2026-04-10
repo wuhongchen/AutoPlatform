@@ -1140,9 +1140,9 @@ class FeishuBitable:
         headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
         
         payload = {
-            "link_share_entity": "tenant_editable",
-            "external_access_entity": "open",
-            "security_entity": "anyone_can_edit" # 关键：设置为可编辑
+            "link_share_entity": "tenant_readable",  # 组织内可阅读
+            "external_access_entity": "open",       # 允许外部访问
+            "security_entity": "anyone_can_view"    # 获得链接的任何人都可以查看
         }
         try:
             r_raw = requests.patch(url, headers=headers, json=payload)

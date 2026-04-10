@@ -55,6 +55,7 @@ class Config:
     # 其他配置
     DEFAULT_COVER_URL = os.getenv("DEFAULT_COVER_URL")
     OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+    WORKFLOW_DB = os.getenv("OPENCLAW_WORKFLOW_DB", os.path.join(OUTPUT_DIR, "workflow.db"))
 
     # 公号广告位配置（用于发布模板注入）
     WECHAT_AD_ENABLED = os.getenv("WECHAT_AD_ENABLED", "0")

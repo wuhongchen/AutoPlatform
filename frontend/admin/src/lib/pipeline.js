@@ -4,9 +4,7 @@ export const NAV_ITEMS = [
   { key: 'inspiration', label: '灵感库', icon: '◫', status: 'ready' },
   { key: 'radar', label: '雷达舱', icon: '⌁', status: 'ready' },
   { key: 'formatter', label: '公众号排版', icon: '✧', status: 'ready' },
-  { key: 'pipeline', label: '写作管理链', icon: '⇄', status: 'ready' },
-  { key: 'publish', label: '发布日志', icon: '☰', status: 'ready' },
-  { key: 'trace', label: '追踪中心', icon: '◎', status: 'ready' },
+  { key: 'tasks', label: '任务中心', icon: '⏱', status: 'ready' },
   { key: 'settings', label: '设置', icon: '⚙', status: 'ready' },
 ]
 

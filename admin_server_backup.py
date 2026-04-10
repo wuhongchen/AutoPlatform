@@ -10,7 +10,6 @@ from mimetypes import guess_type
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import requests
 from flask import Flask, jsonify, request, Response, send_from_directory, send_file, redirect
 
 from admin_accounts import AccountStore
@@ -19,7 +18,6 @@ from modules.feishu import FeishuBitable
 from modules.state_machine import PipelineState, canonical_pipeline_status
 from modules.workflow_store import WorkflowStore
 from modules.wechat_ingest_service import WechatIngestService
-from modules.publisher import WeChatPublisher
 
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -500,15 +498,6 @@ def _overview(account: Optional[Dict] = None):
             "source_type": _safe_text(row.get("source_type")),
         })
 
-    # 计算汇总数据（前端期望的格式）
-    total_articles = len(inspiration_items)
-    pending = inspiration_status.get('待采集', 0) + inspiration_status.get('待改写', 0) + inspiration_status.get('待发布', 0)
-    processing = inspiration_status.get('采集中', 0) + inspiration_status.get('改写中', 0) + inspiration_status.get('发布中', 0)
-    failed = inspiration_status.get('采集失败', 0) + inspiration_status.get('改写失败', 0) + inspiration_status.get('发布失败', 0)
-    skipped = inspiration_status.get('已跳过', 0)
-    published = inspiration_status.get('已发布', 0)
-    completed = inspiration_status.get('已改写', 0) + published
-    
     payload = {
         "ok": True,
         "account": {
@@ -530,23 +519,6 @@ def _overview(account: Optional[Dict] = None):
             "migration": migration,
             "updated_at": _now_str(),
         },
-        "summary": {
-            "total_articles": total_articles,
-            "pending": pending,
-            "processing": processing,
-            "failed": failed,
-            "skipped": skipped,
-            "published": published,
-            "completed": completed,
-        },
-        "state_groups": {
-            "pending": pending,
-            "processing": processing,
-            "completed": completed,
-            "failed": failed,
-            "skipped": skipped,
-        },
-        "status_breakdown": inspiration_status,
         "stats": {
             "inspiration_status": inspiration_status,
             "pipeline_status": pipeline_status,
@@ -555,7 +527,6 @@ def _overview(account: Optional[Dict] = None):
             "inspiration": recent_inspiration,
             "pipeline": recent_pipeline,
         },
-        "recent_items": recent_inspiration,  # 兼容旧字段
     }
     # 如果本地没有灵感数据，但飞书可用，提示从飞书导入到本地
     if not workflow_store.has_inspiration_records(account_id):
@@ -855,16 +826,16 @@ def api_accounts_get(account_id: str):
 def api_accounts_upsert():
     payload = request.get_json(silent=True) or {}
     item = accounts.upsert(payload)
-    return jsonify({"ok": True, "item": item, "active_account_id": accounts.get_active().get("id", "") if accounts.get_active() else ""})
+    return jsonify({"ok": True, "item": item, "active_account_id": accounts.dump().get("active_account_id", "")})
 
 
 @app.post("/api/accounts/<account_id>/activate")
 def api_accounts_activate(account_id: str):
     try:
-        item = accounts.activate(account_id)
+        item = accounts.set_active(account_id)
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
-    return jsonify({"ok": True, "item": item, "active_account_id": accounts.get_active().get("id", "") if accounts.get_active() else ""})
+    return jsonify({"ok": True, "item": item, "active_account_id": accounts.dump().get("active_account_id", "")})
 
 
 @app.post("/api/accounts/<account_id>/delete")
@@ -873,7 +844,7 @@ def api_accounts_delete(account_id: str):
         accounts.delete(account_id)
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
-    return jsonify({"ok": True, "active_account_id": accounts.get_active().get("id", "") if accounts.get_active() else ""})
+    return jsonify({"ok": True, "active_account_id": accounts.dump().get("active_account_id", "")})
 
 
 @app.get("/api/jobs")
@@ -1054,10 +1025,13 @@ def api_inspiration_capture(record_id):
         if not url:
             return jsonify({"ok": False, "error": "记录缺少文章 URL，无法抓取"}), 400
 
-        # 触发异步抓取任务：只采集内容，不进行AI改写
+        # 触发异步抓取任务：单篇文章处理
+        role = _safe_text(account.get("pipeline_role")) or DEFAULT_ROLE
+        model = _safe_text(account.get("pipeline_model")) or DEFAULT_MODEL
+
         job_id = _run_command_async(
-            name=f"文章采集 - {item.get('title', record_id)} [{_safe_text(account.get('name'))}]",
-            command=[PYTHON_BIN, "core/capture_article.py", url, f"--account-id={aid}"],
+            name=f"灵感抓取 - {item.get('title', record_id)} [{_safe_text(account.get('name'))}]",
+            command=[PYTHON_BIN, "core/manager.py", url, role, model],
             account=account,
         )
         return jsonify({
@@ -1069,34 +1043,6 @@ def api_inspiration_capture(record_id):
         return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.post("/api/inspiration/<record_id>/rewrite")
-def api_inspiration_rewrite(record_id: str):
-    """执行AI改写 - 异步执行"""
-    payload = request.get_json(silent=True) or {}
-    account = _pick_account(_extract_account_id(payload))
-    account_id = _account_scope(account)
-    
-    role = _safe_text(payload.get("role")) or DEFAULT_ROLE
-    model = _safe_text(payload.get("model")) or DEFAULT_MODEL
-    
-    # 获取记录信息用于任务名称
-    item = workflow_store.get_inspiration(record_id, account_id)
-    title = item.get("title", record_id) if item else record_id
-    
-    # 启动异步任务
-    job_id = _run_command_async(
-        name=f"AI改写 - {title} [{_safe_text(account.get('name'))}]",
-        command=[PYTHON_BIN, "core/rewrite_article.py", record_id, account_id, role, model],
-        account=account,
-    )
-    
-    return jsonify({
-        "ok": True,
-        "job_id": job_id,
-        "message": "AI改写任务已提交，请在任务中心查看进度",
-    })
 
 
 @app.get("/api/inspiration/list-feishu")
@@ -1291,234 +1237,6 @@ def api_publish_list():
         },
         "account": {"id": _safe_text(account.get("id")), "name": _safe_text(account.get("name"))},
     })
-
-
-@app.post("/api/publish/draft")
-def api_publish_draft():
-    """发布草稿到微信公众号"""
-    payload = request.get_json(silent=True) or {}
-    account = _pick_account(_extract_account_id(payload))
-    account_id = _account_scope(account)
-    record_id = _safe_text(payload.get("record_id"))
-    title = _safe_text(payload.get("title"))
-    
-    if not record_id:
-        return jsonify({"ok": False, "error": "record_id is required"}), 400
-    
-    # 获取灵感记录
-    inspiration = workflow_store.get_inspiration(record_id, account_id)
-    if not inspiration:
-        return jsonify({"ok": False, "error": "inspiration record not found"}), 404
-    
-    # 获取文章内容
-    article_content = workflow_store.get_article_content(record_id, account_id)
-    if not article_content:
-        return jsonify({"ok": False, "error": "article content not found, please rewrite first"}), 400
-    
-    # 优先从 rewritten_html 字段读取，如果不存在则从 rewritten_data 字典读取
-    content_html = article_content.get("rewritten_html", "")
-    content_text = article_content.get("rewritten_text", "")
-    
-    # 兼容旧数据：如果 rewritten_html 为空，尝试从 rewritten_data 读取
-    if not content_html:
-        rewritten_data = article_content.get("rewritten_data", {})
-        content_html = rewritten_data.get("content_html", "")
-        content_text = rewritten_data.get("content_text", "") or rewritten_data.get("content", "")
-    
-    if not content_html:
-        return jsonify({"ok": False, "error": "rewritten content is empty, please rewrite first"}), 400
-    
-    # 获取账户配置
-    wechat_appid = _safe_text(account.get("wechat_appid") or Config.WECHAT_APPID)
-    wechat_secret = _safe_text(account.get("wechat_secret") or Config.WECHAT_SECRET)
-    wechat_author = _safe_text(account.get("wechat_author") or Config.WECHAT_AUTHOR or "W 小龙虾")
-    
-    if not wechat_appid or not wechat_secret:
-        return jsonify({"ok": False, "error": "WeChat appid/secret not configured"}), 400
-    
-    # 创建发布任务
-    job_id = str(uuid.uuid4())[:12]
-    
-    def _do_publish():
-        try:
-            _update_job(job_id, {"status": "running", "progress": 10, "message": "初始化发布器..."})
-            publisher = WeChatPublisher(wechat_appid, wechat_secret, wechat_author)
-            
-            # 获取封面图
-            _update_job(job_id, {"status": "running", "progress": 20, "message": "处理封面图..."})
-            thumb_media_id = None
-            cover_url = inspiration.get("cover_url", "")
-            
-            # 如果 inspiration 中有 cover_media_id，直接使用
-            if inspiration.get("cover_media_id"):
-                thumb_media_id = inspiration.get("cover_media_id")
-                _update_job(job_id, {"status": "running", "progress": 30, "message": f"使用已有封面: {thumb_media_id}"})
-            elif cover_url:
-                # 上传封面图
-                _update_job(job_id, {"status": "running", "progress": 30, "message": "上传封面图..."})
-                thumb_media_id = publisher.upload_from_url(cover_url)
-            
-            # 处理正文图片（同时获取第一张图片作为封面）
-            _update_job(job_id, {"status": "running", "progress": 40, "message": "处理正文图片..."})
-            processed_html, first_image_media_id = _process_article_images(content_html, publisher, job_id)
-            
-            # 如果没有封面图，使用文章中的第一张图片
-            if not thumb_media_id and first_image_media_id:
-                thumb_media_id = first_image_media_id
-                _update_job(job_id, {"status": "running", "progress": 35, "message": f"使用文章图片作为封面: {thumb_media_id}"})
-            elif not thumb_media_id:
-                _update_job(job_id, {"status": "running", "progress": 35, "message": "警告: 无封面图，尝试使用默认封面"})
-            
-            # 生成摘要
-            _update_job(job_id, {"status": "running", "progress": 70, "message": "生成摘要..."})
-            digest = content_text[:100] + "..." if len(content_text) > 100 else content_text
-            
-            # 发布草稿
-            _update_job(job_id, {"status": "running", "progress": 80, "message": "创建微信草稿..."})
-            use_title = title or inspiration.get("title", "未命名标题")
-            media_id = publisher.publish_draft(use_title, processed_html, digest, thumb_media_id)
-            
-            if not media_id:
-                raise Exception("Failed to create WeChat draft")
-            
-            # 记录发布日志
-            _update_job(job_id, {"status": "running", "progress": 90, "message": "记录发布日志..."})
-            publish_record = {
-                "record_id": str(uuid.uuid4())[:16],
-                "pipeline_record_id": record_id,
-                "account_id": account_id,
-                "title": use_title,
-                "publish_status": "已发布",
-                "result": "草稿创建成功",
-                "url": inspiration.get("url", ""),
-                "draft_id": media_id,
-                "published_at": _now_str(),
-            }
-            workflow_store.add_publish_log(publish_record)
-            
-            # 更新灵感记录状态
-            workflow_store.update_inspiration(record_id, status="已发布", updated_at=_now_str())
-            
-            _update_job(job_id, {
-                "status": "completed",
-                "progress": 100,
-                "message": f"发布成功! Media ID: {media_id}",
-                "result": {"media_id": media_id, "title": use_title}
-            })
-            
-        except Exception as e:
-            error_msg = str(e)
-            _update_job(job_id, {"status": "failed", "progress": 0, "message": f"发布失败: {error_msg}"})
-            # 记录失败日志
-            try:
-                workflow_store.add_publish_log({
-                    "record_id": str(uuid.uuid4())[:16],
-                    "pipeline_record_id": record_id,
-                    "account_id": account_id,
-                    "title": title or inspiration.get("title", "未命名标题"),
-                    "publish_status": "发布失败",
-                    "result": error_msg,
-                    "url": inspiration.get("url", ""),
-                    "draft_id": "",
-                    "published_at": _now_str(),
-                })
-            except Exception:
-                pass
-    
-    # 启动后台任务
-    job_id = jobs.create(name=f"发布草稿: {title or inspiration.get('title', '未命名')}", command=[], account=account)
-    jobs.patch(job_id, status="running", progress=0, message="任务已创建")
-    threading.Thread(target=_do_publish, daemon=True).start()
-    
-    return jsonify({"ok": True, "job_id": job_id})
-
-
-def _process_article_images(content_html: str, publisher: WeChatPublisher, job_id: str) -> tuple:
-    """处理文章中的图片，上传到微信服务器
-    返回: (处理后的HTML, 第一张图片的media_id用于封面)"""
-    import re
-    import tempfile
-    
-    # 查找所有图片标签
-    img_pattern = r'<img[^>]+src=["\']([^"\']+)["\'][^>]*>'
-    first_image_bytes = None
-    
-    def replace_image(match):
-        nonlocal first_image_bytes
-        src = match.group(1)
-        # 跳过已经是微信图片的
-        if "mmbiz.qpic.cn" in src or "mmbizurl.cn" in src:
-            return match.group(0)
-        
-        try:
-            image_bytes = None
-            
-            # 处理本地文件路径
-            if src.startswith('/local_images/') or src.startswith('/output/'):
-                # 本地文件路径，尝试多个可能的位置
-                local_path = None
-                possible_paths = [
-                    PROJECT_ROOT + src,
-                    PROJECT_ROOT + '/output' + src,
-                    PROJECT_ROOT + src.replace('/local_images/', '/output/article_images/'),
-                    os.path.join(PROJECT_ROOT, 'output', src.lstrip('/')),
-                ]
-                for path in possible_paths:
-                    if os.path.exists(path):
-                        local_path = path
-                        break
-                
-                if local_path:
-                    with open(local_path, 'rb') as f:
-                        image_bytes = f.read()
-                    print(f"📷 读取本地图片: {src} (来自 {local_path})")
-                else:
-                    print(f"⚠️ 本地图片不存在: {src}")
-            else:
-                # 网络图片，使用 HTTP 下载
-                resp = requests.get(src, timeout=30)
-                if resp.status_code == 200:
-                    image_bytes = resp.content
-                    print(f"📷 下载网络图片: {src}")
-            
-            # 保存第一张图片用于封面
-            if image_bytes and first_image_bytes is None:
-                first_image_bytes = image_bytes
-            
-            # 上传到微信
-            if image_bytes:
-                wx_url = publisher.upload_article_image(image_bytes)
-                if wx_url:
-                    print(f"✅ 图片上传成功: {wx_url}")
-                    return match.group(0).replace(src, wx_url)
-                else:
-                    print(f"❌ 图片上传失败: {src}")
-        except Exception as e:
-            print(f"⚠️ 图片处理失败 {src}: {e}")
-        
-        return match.group(0)
-    
-    processed_html = re.sub(img_pattern, replace_image, content_html)
-    
-    # 如果有第一张图片，上传作为封面
-    thumb_media_id = None
-    if first_image_bytes:
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as f:
-                f.write(first_image_bytes)
-                temp_path = f.name
-            thumb_media_id = publisher.upload_material(temp_path, 'image')
-            os.unlink(temp_path)
-            print(f"✅ 封面图上传成功: {thumb_media_id}")
-        except Exception as e:
-            print(f"⚠️ 封面图上传失败: {e}")
-    
-    return processed_html, thumb_media_id
-
-
-def _update_job(job_id: str, updates: dict):
-    """更新任务状态"""
-    jobs.patch(job_id, **updates)
 
 
 @app.get("/api/media/preview")
@@ -1908,48 +1626,6 @@ def api_action_wechat_full_flow():
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
-
-@app.get("/api/plugin-tasks")
-def api_list_plugin_tasks():
-    """获取插件任务列表"""
-    account_id = request.args.get("account_id", "")
-    record_id = request.args.get("record_id", "")
-    plugin_type = request.args.get("plugin_type", "")
-    status = request.args.get("status", "")
-    limit = int(request.args.get("limit", 100))
-
-    tasks = workflow_store.get_plugin_tasks(
-        record_id=record_id,
-        account_id=account_id,
-        plugin_type=plugin_type,
-        status=status,
-        limit=limit,
-    )
-
-    return jsonify({
-        "ok": True,
-        "tasks": tasks,
-        "count": len(tasks),
-    })
-
-
-@app.get("/api/plugin-tasks/<task_id>")
-def api_get_plugin_task(task_id: str):
-    """获取单个插件任务详情"""
-    tasks = workflow_store.get_plugin_tasks(
-        plugin_type=None,
-        status=None,
-        limit=1
-    )
-    # 这里需要添加按task_id查询的方法，暂时用list过滤
-    task = next((t for t in tasks if t.get("task_id") == task_id), None)
-
-    if not task:
-        return jsonify({"ok": False, "error": "Task not found"}), 404
-
-    return jsonify({"ok": True, "task": task})
-
-
 @app.get("/api/scheduler")
 def api_scheduler_status():
     active = accounts.get_active()
@@ -1976,242 +1652,6 @@ def api_scheduler_stop():
     scheduler.stop()
     return jsonify({"ok": True, "scheduler": scheduler.status()})
 
-
-# ==================== 新插件 API ====================
-
-@app.get("/api/plugins")
-def api_list_plugins():
-    """列出所有可用插件"""
-    from modules.plugins import list_plugins
-    return jsonify({
-        "ok": True,
-        "plugins": list_plugins()
-    })
-
-
-@app.post("/api/plugins/ai-score")
-def api_plugin_ai_score():
-    """执行AI评分插件"""
-    payload = request.get_json(silent=True) or {}
-    account = _pick_account(_extract_account_id(payload))
-    account_id = _account_scope(account)
-    record_id = _safe_text(payload.get("record_id"))
-    
-    if not record_id:
-        return jsonify({"ok": False, "error": "record_id is required"}), 400
-    
-    from modules.plugins import AIScorePlugin
-    plugin = AIScorePlugin(workflow_store, account_id)
-    result = plugin.execute(record_id)
-    
-    return jsonify({
-        "ok": result.success,
-        "message": result.message,
-        "data": result.data
-    })
-
-
-@app.post("/api/plugins/ai-rewrite")
-def api_plugin_ai_rewrite():
-    """执行AI改写插件"""
-    payload = request.get_json(silent=True) or {}
-    account = _pick_account(_extract_account_id(payload))
-    account_id = _account_scope(account)
-    record_id = _safe_text(payload.get("record_id"))
-    role = _safe_text(payload.get("role")) or "tech_expert"
-    model = _safe_text(payload.get("model")) or "auto"
-    
-    if not record_id:
-        return jsonify({"ok": False, "error": "record_id is required"}), 400
-    
-    from modules.plugins import AIRewritePlugin
-    plugin = AIRewritePlugin(workflow_store, account_id)
-    result = plugin.execute(record_id, role=role, model=model)
-    
-    return jsonify({
-        "ok": result.success,
-        "message": result.message,
-        "data": result.data
-    })
-
-
-@app.post("/api/plugins/publish")
-def api_plugin_publish():
-    """执行发布插件"""
-    payload = request.get_json(silent=True) or {}
-    account = _pick_account(_extract_account_id(payload))
-    account_id = _account_scope(account)
-    record_id = _safe_text(payload.get("record_id"))
-    
-    if not record_id:
-        return jsonify({"ok": False, "error": "record_id is required"}), 400
-    
-    from modules.plugins import PublishPlugin
-    plugin = PublishPlugin(workflow_store, account_id)
-    result = plugin.execute(record_id)
-    
-    return jsonify({
-        "ok": result.success,
-        "message": result.message,
-        "data": result.data
-    })
-
-
-@app.get("/api/articles/<record_id>/content")
-def api_get_article_content(record_id: str):
-    """获取文章内容"""
-    account = _pick_account(_extract_account_id())
-    account_id = _account_scope(account)
-    
-    content = workflow_store.get_article_content(record_id, account_id)
-    if not content:
-        return jsonify({"ok": False, "error": "Article content not found"}), 404
-    
-    return jsonify({
-        "ok": True,
-        "content": content
-    })
-
-
-@app.get("/local_images/<path:filename>")
-def serve_local_images(filename: str):
-    """提供本地图片文件服务 (兼容旧路径，实际指向 article_images)"""
-    article_images_dir = Path(PROJECT_ROOT) / "output" / "article_images"
-    if not article_images_dir.exists():
-        return Response("Images directory not found", status=404, mimetype="text/plain")
-    
-    # 安全路径检查，防止目录遍历
-    try:
-        requested_path = (article_images_dir / filename).resolve()
-        if not str(requested_path).startswith(str(article_images_dir.resolve())):
-            return Response("Invalid path", status=403, mimetype="text/plain")
-    except Exception:
-        return Response("Invalid path", status=403, mimetype="text/plain")
-    
-    if not requested_path.exists():
-        return Response("Image not found", status=404, mimetype="text/plain")
-    
-    return send_from_directory(article_images_dir, filename)
-
-
-@app.get("/api/articles/<record_id>/preview-wechat")
-def api_preview_wechat(record_id: str):
-    """预览文章内容（返回HTML）"""
-    account = _pick_account(_extract_account_id())
-    account_id = _account_scope(account)
-    content_type = request.args.get("type", "original")  # original or rewritten
-    
-    content = workflow_store.get_article_content(record_id, account_id)
-    if not content:
-        return "<h1>文章未找到</h1><p>请检查记录ID是否正确</p>", 404
-    
-    if content_type == "rewritten":
-        html_content = content.get("rewritten_html", "")
-        data = content.get("rewritten_data", {})
-        title = data.get("title", "改写后文章")
-    else:
-        html_content = content.get("original_html", "")
-        data = content.get("original_data", {})
-        title = data.get("title", "原文")
-    
-    if not html_content:
-        return f"<h1>{title}</h1><p>暂无{ '改写后' if content_type == 'rewritten' else '原文' }内容</p>", 200
-    
-    # 修复图片路径：将相对路径转换为绝对路径
-    # HTML中的图片路径是 /local_images/... 需要添加服务器基础URL
-    server_base = f"http://127.0.0.1:{os.getenv('ADMIN_PORT', '8701')}"
-    html_content = html_content.replace('src="/local_images/', f'src="{server_base}/local_images/')
-    html_content = html_content.replace('src="/output/', f'src="{server_base}/output/')
-    html_content = html_content.replace("src='/local_images/", f'src="{server_base}/local_images/')
-    html_content = html_content.replace("src='/output/", f'src="{server_base}/output/')
-    
-    # 包装成完整HTML页面
-    preview_html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} - 预览</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-            line-height: 1.8;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }}
-        .article-container {{
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }}
-        h1 {{
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #222;
-        }}
-        h2 {{
-            font-size: 20px;
-            font-weight: 600;
-            margin-top: 30px;
-            margin-bottom: 15px;
-        }}
-        h3 {{
-            font-size: 18px;
-            font-weight: 600;
-            margin-top: 25px;
-            margin-bottom: 10px;
-        }}
-        p {{
-            margin: 15px 0;
-            text-align: justify;
-        }}
-        img {{
-            max-width: 100%;
-            height: auto;
-            display: block;
-            margin: 20px auto;
-        }}
-        ul, ol {{
-            padding-left: 25px;
-        }}
-        li {{
-            margin: 8px 0;
-        }}
-        blockquote {{
-            border-left: 4px solid #1890ff;
-            padding-left: 15px;
-            margin: 20px 0;
-            color: #666;
-            background: #f6f6f6;
-            padding: 15px;
-        }}
-        .preview-header {{
-            background: #1890ff;
-            color: white;
-            padding: 10px 20px;
-            margin: -20px -20px 20px -20px;
-            border-radius: 8px 8px 0 0;
-            font-size: 14px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="article-container">
-        <div class="preview-header">📄 {'改写后预览' if content_type == 'rewritten' else '原文预览'} | {title[:50]}{'...' if len(title) > 50 else ''}</div>
-        {html_content}
-    </div>
-</body>
-</html>"""
-    
-    return Response(preview_html, mimetype='text/html')
-
-
-# ==================== 工具 API ====================
 
 @app.get("/tools/huasheng")
 def ui_huasheng_redirect():

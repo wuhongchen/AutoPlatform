@@ -165,17 +165,20 @@ class WeChatPublisher:
 
         print(f"📝 创建草稿: {safe_title}")
         url = f'https://api.weixin.qq.com/cgi-bin/draft/add?access_token={self.token}'
-        payload = {
-            "articles": [{
-                "title": safe_title,
-                "content": content_html,
-                "digest": digest,
-                "author": self.author,
-                "thumb_media_id": thumb_media_id,
-                "need_open_comment": 1,
-                "only_fans_can_comment": 0
-            }]
+        
+        # 构建文章数据，只有 thumb_media_id 有效时才包含
+        article = {
+            "title": safe_title,
+            "content": content_html,
+            "digest": digest,
+            "author": self.author,
+            "need_open_comment": 1,
+            "only_fans_can_comment": 0
         }
+        if thumb_media_id:
+            article["thumb_media_id"] = thumb_media_id
+        
+        payload = {"articles": [article]}
         
         try:
             # 【核心修复】使用 ensure_ascii=False 避免中文被转义成 \uXXXX 导致字节数暴增

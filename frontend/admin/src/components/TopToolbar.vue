@@ -2,10 +2,8 @@
 defineProps({
   accounts: { type: Array, required: true },
   activeAccountId: { type: String, default: '' },
-  schedulerText: { type: String, required: true },
-  schedulerRunning: { type: Boolean, default: false },
 })
-const emit = defineEmits(['change-account', 'refresh'])
+const emit = defineEmits(['change-account'])
 </script>
 
 <template>
@@ -19,13 +17,6 @@ const emit = defineEmits(['change-account', 'refresh'])
           </option>
         </select>
       </div>
-      <div class="scheduler-chip" :class="schedulerRunning ? 'ok' : 'warn'">
-        <span class="dot"></span>
-        <span>{{ schedulerText }}</span>
-      </div>
-    </div>
-    <div class="toolbar-right">
-      <button class="ghost-btn" @click="emit('refresh')">刷新数据</button>
     </div>
   </header>
 </template>
