@@ -81,6 +81,11 @@ check_node() {
         error "Node.js 未安装"
         exit 1
     fi
+
+    if ! command -v npm &> /dev/null; then
+        error "npm 未安装"
+        exit 1
+    fi
     
     NODE_VERSION=$(node --version)
     info "Node.js 版本: $NODE_VERSION"
@@ -140,7 +145,8 @@ start_backend() {
     local port="${PORT:-8701}"
     
     info "启动后端服务..."
-    info "地址: http://$host:$port"
+    info "访问地址: http://$host:$port/admin"
+    info "API 地址: http://$host:$port/api"
     
     # 检查虚拟环境和依赖
     if [ ! -f "$VENV_PYTHON" ]; then
@@ -185,6 +191,13 @@ start_frontend() {
 }
 
 # 同时启动前后端 (开发模式)
+cleanup_backend() {
+    if [ -n "${BACKEND_PID:-}" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+        kill "$BACKEND_PID" 2>/dev/null || true
+        wait "$BACKEND_PID" 2>/dev/null || true
+    fi
+}
+
 start_dev() {
     info "启动开发模式 (前后端)..."
     
@@ -196,7 +209,7 @@ start_dev() {
     sleep 2
     
     # 启动前端
-    trap 'kill $BACKEND_PID 2>/dev/null; exit' INT TERM
+    trap 'cleanup_backend; exit' INT TERM EXIT
     PORT=5173 start_frontend
 }
 
@@ -286,14 +299,23 @@ clean_cache() {
 # 解析参数
 HOST="127.0.0.1"
 PORT=""
+COMMAND=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --host)
+            if [[ -z "${2:-}" ]]; then
+                error "--host 需要一个参数"
+                exit 1
+            fi
             HOST="$2"
             shift 2
             ;;
         --port)
+            if [[ -z "${2:-}" ]]; then
+                error "--port 需要一个参数"
+                exit 1
+            fi
             PORT="$2"
             shift 2
             ;;
@@ -303,6 +325,11 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
+            if [[ -n "$COMMAND" ]]; then
+                error "仅支持一个命令，额外参数: $1"
+                show_help
+                exit 1
+            fi
             COMMAND="$1"
             shift
             ;;
