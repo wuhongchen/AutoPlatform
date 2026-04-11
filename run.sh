@@ -31,6 +31,7 @@ show_help() {
     echo "  dev         同时启动前后端 (开发模式)"
     echo "  build       构建前端生产版本"
     echo "  test        运行自动化测试 (pytest)"
+    echo "  smoke       运行关键链路冒烟测试"
     echo "  install     安装所有依赖"
     echo "  clean       清理缓存和临时文件"
     echo "  help        显示帮助信息"
@@ -240,6 +241,32 @@ run_tests() {
     "$VENV_PYTHON" -m pytest -q
 }
 
+# 运行关键链路冒烟测试
+run_smoke_tests() {
+    info "运行关键链路冒烟测试..."
+    check_python
+
+    if [ ! -f "$VENV_PYTHON" ]; then
+        warning "虚拟环境不存在，正在创建..."
+        setup_venv
+        install_backend_deps
+    fi
+
+    if ! "$VENV_PYTHON" -c "import pytest" 2>/dev/null; then
+        warning "未检测到 pytest，正在安装依赖..."
+        install_backend_deps
+    fi
+
+    cd "$PROJECT_DIR"
+    export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+    export DEBUG="${DEBUG:-false}"
+
+    "$VENV_PYTHON" -m pytest -q \
+        tests/test_api_e2e.py::test_health_and_admin_redirect \
+        tests/test_api_e2e.py::test_accounts_crud_stats_and_global_stats \
+        tests/test_api_e2e.py::test_inspiration_article_templates_publish_and_pipeline
+}
+
 # 清理缓存
 clean_cache() {
     info "清理缓存和临时文件..."
@@ -302,6 +329,9 @@ case "${COMMAND:-help}" in
         ;;
     test)
         run_tests
+        ;;
+    smoke)
+        run_smoke_tests
         ;;
     install)
         install_deps
