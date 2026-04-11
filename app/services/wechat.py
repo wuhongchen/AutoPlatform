@@ -20,7 +20,7 @@ class WechatService:
         self.appid = appid or settings.wechat.appid
         self.secret = secret or settings.wechat.secret
         self._access_token: Optional[str] = None
-        _token_expires_at: float = 0
+        self._token_expires_at: float = 0
     
     def _get_access_token(self) -> str:
         """获取access_token"""

@@ -21,6 +21,7 @@ venv/
 # 数据文件
 data/db/*.db
 data/db/*.db-*
+data/db/*.bak_*
 output/*.html
 output/*.md
 output/*.json
@@ -39,3 +40,8 @@ temp/
 # 缓存
 .cache/
 *.stamp
+
+# 前端构建产物
+frontend/dist/
+app/static/dist/
+frontend/node_modules/

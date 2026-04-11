@@ -167,6 +167,20 @@ class StorageService:
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            self._ensure_articles_schema(conn)
+
+    def _ensure_articles_schema(self, conn: sqlite3.Connection):
+        """向后兼容：为历史数据库补齐新版本文章字段"""
+        rows = conn.execute("PRAGMA table_info(articles)").fetchall()
+        existing_columns = {row["name"] for row in rows}
+        required_columns = {
+            "rewrite_style": "TEXT DEFAULT 'tech_expert'",
+            "rewrite_references": "TEXT DEFAULT '[]'",
+            "custom_instructions": "TEXT DEFAULT ''",
+        }
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(f"ALTER TABLE articles ADD COLUMN {column_name} {column_type}")
     
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
         """行转字典"""
@@ -174,11 +188,11 @@ class StorageService:
         for key in row.keys():
             value = row[key]
             # 解析JSON字段
-            if key in ["metadata", "images", "result", "params"] and isinstance(value, str):
+            if key in ["metadata", "images", "result", "params", "rewrite_references"] and isinstance(value, str):
                 try:
                     value = json.loads(value)
                 except json.JSONDecodeError:
-                    value = {} if key != "images" else []
+                    value = {} if key not in ["images", "rewrite_references"] else []
             result[key] = value
         return result
     
@@ -334,6 +348,8 @@ class StorageService:
             data["metadata"] = json.dumps(data["metadata"])
         if "images" in data and isinstance(data["images"], list):
             data["images"] = json.dumps(data["images"])
+        if "rewrite_references" in data and isinstance(data["rewrite_references"], list):
+            data["rewrite_references"] = json.dumps(data["rewrite_references"])
         
         data["updated_at"] = datetime.now().isoformat()
         
@@ -471,6 +487,29 @@ class StorageService:
         with self._get_connection() as conn:
             rows = conn.execute(query, params).fetchall()
             return [InspirationRecord.model_validate(self._row_to_dict(row)) for row in rows]
+
+    def update_inspiration(self, record_id: str, data: Dict[str, Any]) -> bool:
+        """更新灵感记录"""
+        data = {k: v for k, v in data.items() if v is not None}
+        if not data:
+            return False
+
+        if "metadata" in data and isinstance(data["metadata"], dict):
+            data["metadata"] = json.dumps(data["metadata"])
+        if "images" in data and isinstance(data["images"], list):
+            data["images"] = json.dumps(data["images"])
+
+        data["updated_at"] = datetime.now().isoformat()
+
+        fields = ", ".join([f"{k} = ?" for k in data.keys()])
+        values = list(data.values()) + [record_id]
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE inspiration_records SET {fields} WHERE id = ?",
+                values
+            )
+            return cursor.rowcount > 0
     
     # 统计信息
     def get_stats(self, account_id: Optional[str] = None) -> Dict[str, Any]:

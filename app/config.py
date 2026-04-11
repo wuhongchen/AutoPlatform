@@ -6,7 +6,7 @@
 import os
 from pathlib import Path
 from typing import Optional, List
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -91,9 +91,34 @@ class AppConfig(BaseSettings):
     non_interactive: bool = Field(default=False, description="非交互模式")
     schema_check_enabled: bool = Field(default=True, description="启用表结构检查")
     schema_check_interval: int = Field(default=21600, description="表结构检查间隔")
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def _normalize_debug(cls, value):
+        """兼容非标准 DEBUG 环境变量值，避免启动失败。"""
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+
+        normalized = str(value).strip().lower()
+        truthy = {"1", "true", "yes", "on", "debug", "development", "dev"}
+        falsy = {"0", "false", "no", "off", "release", "prod", "production", ""}
+
+        if normalized in truthy:
+            return True
+        if normalized in falsy:
+            return False
+        # 兜底保守为 False，避免无效输入直接导致应用不可启动
+        return False
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # 统一将相对路径锚定到项目根目录，避免在不同 cwd 启动时读写到错误的数据目录
+        if not self.data_dir.is_absolute():
+            self.data_dir = self.project_root / self.data_dir
+        if not self.output_dir.is_absolute():
+            self.output_dir = self.project_root / self.output_dir
         # 确保目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 # AutoPlatform Makefile
 # 简化项目运行命令
 
-.PHONY: help install backend frontend dev build clean
+.PHONY: help install backend frontend dev build test clean
 
 # 默认显示帮助
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  make frontend   启动前端开发服务器 (http://127.0.0.1:5173)"
 	@echo "  make dev        同时启动前后端 (开发模式)"
 	@echo "  make build      构建前端生产版本"
+	@echo "  make test       运行自动化测试"
 	@echo "  make clean      清理缓存和临时文件"
 	@echo ""
 	@echo "或使用 ./run.sh 查看更多选项"
@@ -36,6 +37,10 @@ dev:
 # 构建前端
 build:
 	./run.sh build
+
+# 运行测试
+test:
+	./run.sh test
 
 # 清理缓存
 clean:

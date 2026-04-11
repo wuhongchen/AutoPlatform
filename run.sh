@@ -30,6 +30,7 @@ show_help() {
     echo "  frontend    启动前端开发服务器 (Vite)"
     echo "  dev         同时启动前后端 (开发模式)"
     echo "  build       构建前端生产版本"
+    echo "  test        运行自动化测试 (pytest)"
     echo "  install     安装所有依赖"
     echo "  clean       清理缓存和临时文件"
     echo "  help        显示帮助信息"
@@ -215,6 +216,30 @@ build_frontend() {
     info "构建输出: $PROJECT_DIR/app/static/dist/"
 }
 
+# 运行自动化测试
+run_tests() {
+    info "运行自动化测试..."
+    check_python
+
+    # 检查虚拟环境和依赖
+    if [ ! -f "$VENV_PYTHON" ]; then
+        warning "虚拟环境不存在，正在创建..."
+        setup_venv
+        install_backend_deps
+    fi
+
+    if ! "$VENV_PYTHON" -c "import pytest" 2>/dev/null; then
+        warning "未检测到 pytest，正在安装依赖..."
+        install_backend_deps
+    fi
+
+    cd "$PROJECT_DIR"
+    export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+    export DEBUG="${DEBUG:-false}"
+
+    "$VENV_PYTHON" -m pytest -q
+}
+
 # 清理缓存
 clean_cache() {
     info "清理缓存和临时文件..."
@@ -274,6 +299,9 @@ case "${COMMAND:-help}" in
         ;;
     build)
         build_frontend
+        ;;
+    test)
+        run_tests
         ;;
     install)
         install_deps

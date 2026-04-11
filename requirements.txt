@@ -24,3 +24,6 @@ duckduckgo-search>=3.0.0
 # CLI工具
 typer>=0.9.0
 rich>=13.0.0
+
+# 测试
+pytest>=8.0.0
