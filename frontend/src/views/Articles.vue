@@ -24,6 +24,12 @@
           </template>
         </el-table-column>
         
+        <el-table-column label="账户" width="140">
+          <template #default="{ row }">
+            <el-tag size="small" type="info">{{ row.account_id || '-' }}</el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column label="来源" width="120">
           <template #default="{ row }">
             {{ row.source_author || '-' }}
@@ -95,14 +101,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { useArticleStore } from '../stores'
+import { useArticleStore, useAppStore } from '../stores'
 
 const router = useRouter()
 const articleStore = useArticleStore()
+const appStore = useAppStore()
 
 const loading = ref(false)
 const filterStatus = ref('')
@@ -145,7 +152,10 @@ function formatDate(dateStr) {
 
 async function loadData() {
   loading.value = true
-  await articleStore.fetchArticles().finally(() => {
+  const params = appStore.selectedAccountId
+    ? { account_id: appStore.selectedAccountId }
+    : undefined
+  await articleStore.fetchArticles(params).finally(() => {
     loading.value = false
   })
 }
@@ -176,6 +186,10 @@ function viewDraft(draftId) {
 }
 
 onMounted(() => {
+  loadData()
+})
+
+watch(() => appStore.selectedAccountId, () => {
   loadData()
 })
 </script>

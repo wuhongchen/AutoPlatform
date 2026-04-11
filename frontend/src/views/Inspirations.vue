@@ -10,7 +10,7 @@
             style="width: 300px"
             clearable
           />
-          <el-button type="primary" @click="showCollectDialog = true">
+          <el-button type="primary" @click="openCollectDialog">
             <el-icon><Plus /></el-icon>采集灵感
           </el-button>
         </div>
@@ -107,13 +107,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
-import { useInspirationStore, useAccountStore } from '../stores'
+import { useInspirationStore, useAccountStore, useAppStore } from '../stores'
 
 const inspirationStore = useInspirationStore()
 const accountStore = useAccountStore()
+const appStore = useAppStore()
 
 const loading = ref(false)
 const searchQuery = ref('')
@@ -154,12 +155,21 @@ function formatDate(dateStr) {
 
 async function loadData() {
   loading.value = true
+  const params = appStore.selectedAccountId
+    ? { account_id: appStore.selectedAccountId }
+    : undefined
   await Promise.all([
-    inspirationStore.fetchInspirations(),
+    inspirationStore.fetchInspirations(params),
     accountStore.fetchAccounts()
   ]).finally(() => {
     loading.value = false
   })
+}
+
+function openCollectDialog() {
+  const preferred = appStore.selectedAccountId || accountStore.accounts[0]?.account_id || ''
+  collectForm.value.account_id = preferred
+  showCollectDialog.value = true
 }
 
 async function collect() {
@@ -197,6 +207,10 @@ function viewDetail(row) {
 }
 
 onMounted(() => {
+  loadData()
+})
+
+watch(() => appStore.selectedAccountId, () => {
   loadData()
 })
 </script>

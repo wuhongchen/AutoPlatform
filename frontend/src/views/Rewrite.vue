@@ -169,11 +169,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Promotion, CopyDocument, Search, Document } from '@element-plus/icons-vue'
-import { useStyleStore, useInspirationStore, useArticleStore } from '../stores'
+import { useStyleStore, useInspirationStore, useArticleStore, useAppStore } from '../stores'
 import api from '../api'
 
 const route = useRoute()
@@ -181,6 +181,7 @@ const router = useRouter()
 const styleStore = useStyleStore()
 const inspirationStore = useInspirationStore()
 const articleStore = useArticleStore()
+const appStore = useAppStore()
 
 const articleId = computed(() => route.query.id)
 const article = computed(() => articleStore.currentArticle)
@@ -221,12 +222,18 @@ async function loadData() {
     await articleStore.getArticle(articleId.value)
   }
   await styleStore.fetchStyles()
-  await inspirationStore.fetchInspirations()
+  await loadInspirations()
   
   // 默认选中第一个风格
   if (styleStore.activeStyles.length > 0 && !config.value.style) {
     config.value.style = styleStore.activeStyles[0].id
   }
+}
+
+async function loadInspirations() {
+  const accountId = appStore.selectedAccountId || article.value?.account_id || ''
+  const params = accountId ? { account_id: accountId } : undefined
+  await inspirationStore.fetchInspirations(params)
 }
 
 async function startRewrite() {
@@ -284,6 +291,10 @@ function copyResult() {
 
 onMounted(() => {
   loadData()
+})
+
+watch(() => appStore.selectedAccountId, () => {
+  loadInspirations()
 })
 </script>
 

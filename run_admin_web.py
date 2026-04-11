@@ -4,6 +4,7 @@ AutoPlatform 管理后台启动脚本
 """
 import argparse
 from app.api.server import run_server
+from app.config import get_settings
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AutoPlatform Admin Web")
@@ -13,9 +14,13 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    settings = get_settings()
+    db_path = settings.data_dir / "db" / "autoplatform.db"
+
     print(f"🚀 AutoPlatform 管理后台启动中...")
-    print(f"📍 访问地址: http://{args.host}:{args.port}/admin")
+    print(f"📍 访问地址: http://{args.host}:{args.port}/")
     print(f"📍 API 地址: http://{args.host}:{args.port}/api")
+    print(f"🗄️  数据库: {db_path}")
     print()
     
     run_server(host=args.host, port=args.port, debug=args.debug)

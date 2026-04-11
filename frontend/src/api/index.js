@@ -28,6 +28,7 @@ api.interceptors.response.use(
 export default {
   // 健康检查
   health: () => api.get('/health'),
+  stats: (params) => api.get('/stats', { params }),
 
   // 账户
   accounts: {

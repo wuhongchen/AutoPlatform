@@ -1,7 +1,7 @@
 """
 API服务
 """
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect
 from app.core import AppManager
 from app.config import get_settings
 
@@ -9,10 +9,9 @@ import os
 
 # 获取项目路径
 app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-project_root = os.path.dirname(app_dir)
 
 # Vue 构建输出目录
-vue_dist_dir = os.path.join(project_root, 'frontend', 'dist')
+vue_dist_dir = os.path.join(app_dir, "static", "dist")
 
 app = Flask(__name__, 
             static_folder=vue_dist_dir if os.path.exists(vue_dist_dir) else os.path.join(app_dir, 'static'),
@@ -47,9 +46,31 @@ def get_account(account_id):
         return jsonify({"error": "Not found"}), 404
     return jsonify(account.model_dump())
 
+@app.route("/api/accounts/<account_id>", methods=["PUT"])
+def update_account(account_id):
+    data = request.json or {}
+    success = manager.storage.update_account(account_id, data)
+    if not success:
+        return jsonify({"error": "Update failed or account not found"}), 400
+    account = manager.get_account(account_id)
+    return jsonify(account.model_dump() if account else {"success": True})
+
+@app.route("/api/accounts/<account_id>", methods=["DELETE"])
+def delete_account(account_id):
+    success = manager.storage.delete_account(account_id)
+    if not success:
+        return jsonify({"error": "Delete failed or account not found"}), 400
+    return jsonify({"success": True})
+
 @app.route("/api/accounts/<account_id>/stats", methods=["GET"])
 def get_stats(account_id):
     stats = manager.get_stats(account_id)
+    return jsonify(stats)
+
+@app.route("/api/stats", methods=["GET"])
+def get_global_stats():
+    account_id = request.args.get("account_id")
+    stats = manager.get_stats(account_id if account_id else None)
     return jsonify(stats)
 
 @app.route("/api/inspirations", methods=["POST"])
@@ -67,6 +88,13 @@ def list_inspirations():
     account_id = request.args.get("account_id")
     records = manager.storage.list_inspirations(account_id=account_id)
     return jsonify([r.model_dump() for r in records])
+
+@app.route("/api/inspirations/<record_id>", methods=["GET"])
+def get_inspiration(record_id):
+    record = manager.storage.get_inspiration(record_id)
+    if not record:
+        return jsonify({"error": "Inspiration not found"}), 404
+    return jsonify(record.model_dump())
 
 @app.route("/api/inspirations/<record_id>/approve", methods=["POST"])
 def approve_inspiration(record_id):
@@ -209,6 +237,12 @@ def process_pipeline():
 
 # ============ Vue 前端静态文件服务 ============
 
+@app.route("/admin", defaults={"subpath": ""})
+@app.route("/admin/<path:subpath>")
+def legacy_admin(subpath):
+    """兼容历史后台入口 /admin"""
+    return redirect("/")
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_vue(path):
@@ -216,10 +250,10 @@ def serve_vue(path):
     # API 请求不走这里
     if path.startswith("api/"):
         return jsonify({"error": "Not found"}), 404
-    
+
     # 检查是否存在构建的 Vue 文件
-    dist_dir = os.path.join(project_root, 'frontend', 'dist')
-    
+    dist_dir = vue_dist_dir
+
     if os.path.exists(dist_dir):
         # 开发模式：如果文件存在则返回，否则返回 index.html
         file_path = os.path.join(dist_dir, path)

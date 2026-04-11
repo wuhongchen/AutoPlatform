@@ -24,10 +24,18 @@
 import { VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
+import { useAppStore } from '../stores'
+
+const appStore = useAppStore()
 
 async function runPipeline() {
+  if (!appStore.selectedAccountId) {
+    ElMessage.warning('请先在顶部选择一个账户再运行流水线')
+    return
+  }
+
   try {
-    await api.pipeline.process({ account_id: 'default', batch_size: 3 })
+    await api.pipeline.process({ account_id: appStore.selectedAccountId, batch_size: 3 })
     ElMessage.success('流水线已启动')
   } catch (error) {
     ElMessage.error(error.message || '启动失败')

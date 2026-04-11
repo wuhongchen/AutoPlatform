@@ -28,6 +28,22 @@
     <el-container>
       <el-header class="header">
         <h2>{{ $route.meta.title }}</h2>
+        <div class="header-actions">
+          <el-select
+            v-model="selectedAccountModel"
+            placeholder="选择账户"
+            size="small"
+            class="account-switcher"
+          >
+            <el-option label="全部账户" value="" />
+            <el-option
+              v-for="acc in accountStore.accounts"
+              :key="acc.account_id"
+              :label="`${acc.name} (${acc.account_id})`"
+              :value="acc.account_id"
+            />
+          </el-select>
+        </div>
       </el-header>
       
       <el-main class="main-content">
@@ -38,14 +54,35 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Cpu } from '@element-plus/icons-vue'
+import { useAccountStore, useAppStore } from '../stores'
 
 const route = useRoute()
+const accountStore = useAccountStore()
+const appStore = useAppStore()
 
 const menuRoutes = computed(() => {
   return route.matched[0]?.children || []
+})
+
+const selectedAccountModel = computed({
+  get: () => appStore.selectedAccountId,
+  set: (value) => appStore.setSelectedAccount(value)
+})
+
+onMounted(async () => {
+  const accounts = await accountStore.fetchAccounts()
+  if (!accounts.length) {
+    appStore.setSelectedAccount('')
+    return
+  }
+
+  // 当前选择不存在时，回退到“全部账户”
+  if (appStore.selectedAccountId && !accounts.some(acc => acc.account_id === appStore.selectedAccountId)) {
+    appStore.setSelectedAccount('')
+  }
 })
 </script>
 
@@ -93,12 +130,23 @@ const menuRoutes = computed(() => {
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .header h2 {
   font-size: 20px;
   font-weight: 600;
   color: #1e293b;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-switcher {
+  width: 260px;
 }
 
 .main-content {

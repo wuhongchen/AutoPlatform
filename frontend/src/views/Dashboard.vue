@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useAppStore } from '../stores'
 
 const appStore = useAppStore()
@@ -58,15 +58,15 @@ const statsList = computed(() => [
   {
     key: 'pending',
     label: '待处理',
-    value: appStore.stats.articles?.pending || 0,
+    value: pendingArticles.value,
     icon: 'Clock',
     bgColor: '#fef3c7',
     color: '#92400e'
   },
   {
     key: 'inspiration',
-    label: '灵感待处理',
-    value: (appStore.stats.inspiration?.['待分析'] || 0) + (appStore.stats.inspiration?.['待决策'] || 0),
+    label: '灵感总数',
+    value: Object.values(appStore.stats.inspiration || {}).reduce((sum, count) => sum + count, 0),
     icon: 'Lightbulb',
     bgColor: '#fce7f3',
     color: '#9d174d'
@@ -74,8 +74,12 @@ const statsList = computed(() => [
 ])
 
 const totalArticles = computed(() => {
+  return Object.values(appStore.stats.articles || {}).reduce((sum, count) => sum + count, 0)
+})
+
+const pendingArticles = computed(() => {
   const articles = appStore.stats.articles || {}
-  return (articles.pending || 0) + (articles.published || 0) + (articles.failed || 0)
+  return (articles.pending || 0) + (articles.rewriting || 0) + (articles.reviewing || 0)
 })
 
 const quickActions = [
@@ -85,8 +89,16 @@ const quickActions = [
   { label: '账户设置', icon: 'Setting', path: '/accounts' }
 ]
 
-onMounted(() => {
+async function loadData() {
   appStore.fetchStats()
+}
+
+onMounted(() => {
+  loadData()
+})
+
+watch(() => appStore.selectedAccountId, () => {
+  loadData()
 })
 </script>
 

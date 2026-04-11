@@ -2,6 +2,22 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../api'
 
+const SELECTED_ACCOUNT_KEY = 'autoplatform:selectedAccountId'
+
+function readSelectedAccountId() {
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem(SELECTED_ACCOUNT_KEY) || ''
+}
+
+function persistSelectedAccountId(value) {
+  if (typeof window === 'undefined') return
+  if (value) {
+    window.localStorage.setItem(SELECTED_ACCOUNT_KEY, value)
+  } else {
+    window.localStorage.removeItem(SELECTED_ACCOUNT_KEY)
+  }
+}
+
 // 账户状态
 export const useAccountStore = defineStore('accounts', () => {
   const accounts = ref([])
@@ -30,12 +46,20 @@ export const useAppStore = defineStore('app', () => {
     pipeline: {},
     inspiration: {}
   })
-  
+
+  const selectedAccountId = ref(readSelectedAccountId())
   const loading = ref(false)
-  
+
+  function setSelectedAccount(accountId) {
+    selectedAccountId.value = accountId || ''
+    persistSelectedAccountId(selectedAccountId.value)
+  }
+
   async function fetchStats(accountId) {
     try {
-      const data = await api.accounts.stats(accountId || 'default')
+      const targetAccountId = accountId ?? selectedAccountId.value
+      const params = targetAccountId ? { account_id: targetAccountId } : undefined
+      const data = await api.stats(params)
       stats.value = data
       return data
     } catch (error) {
@@ -46,7 +70,9 @@ export const useAppStore = defineStore('app', () => {
   
   return {
     stats,
+    selectedAccountId,
     loading,
+    setSelectedAccount,
     fetchStats
   }
 })
