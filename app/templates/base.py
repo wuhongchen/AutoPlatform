@@ -105,6 +105,24 @@ class BaseTemplate(ABC):
         </style>
         """
     
+    def render_fragment(self, title: str, content: str, author: str = "",
+                        cover_image: str = "", **kwargs) -> str:
+        """
+        渲染文章片段（不含完整 HTML 文档结构，适合微信草稿等场景）
+        子类应重写此方法返回 style + body 的内容片段
+        """
+        full_html = self.render(title, content, author, cover_image, **kwargs)
+        # 从完整 HTML 中提取 body 内容
+        import re
+        match = re.search(r'<body>(.*?)</body>', full_html, re.DOTALL)
+        if match:
+            body = match.group(1).strip()
+            # 同时保留 head 中的 style
+            style_match = re.search(r'<style>.*?</style>', full_html, re.DOTALL)
+            styles = style_match.group(0) if style_match else ""
+            return f"{styles}\n{body}"
+        return full_html
+
     def _wrap_html(self, body_content: str) -> str:
         """包装HTML"""
         styles = self.get_styles()

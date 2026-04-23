@@ -21,6 +21,14 @@ class FakeCollectorService:
             "images": ["https://example.com/mock.jpg"],
             "url": url,
         }
+    
+    def download_images(self, image_urls, record_id, base_dir="data/images"):
+        """Mock: 返回原始URL作为本地路径"""
+        return image_urls, {}
+    
+    def rewrite_image_urls(self, html, url_map):
+        """Mock: 直接返回原HTML"""
+        return html
 
 
 class FakeAIService:
@@ -39,9 +47,11 @@ class FakeAIService:
         style_preset: str = "tech_expert",
         inspiration_records=None,
         similarity_threshold: float = 0.7,
+        custom_instructions: str = None,
     ):
+        extra = f" [custom: {custom_instructions}]" if custom_instructions else ""
         return {
-            "content": f"<h2>Mock Rewritten ({style_preset})</h2><p>{content}</p>",
+            "content": f"<h2>Mock Rewritten ({style_preset})</h2><p>{content}{extra}</p>",
             "style_preset": style_preset,
             "used_references": ["mock-reference"],
             "reference_count": 1,
@@ -60,6 +70,7 @@ class FakeWechatService:
         template_name: str = "default",
         author: str = "",
         cover_image: str = "",
+        full_html: bool = False,
         **kwargs,
     ):
         return (
@@ -83,6 +94,19 @@ def client(monkeypatch, tmp_path):
     test_manager = AppManager()
     monkeypatch.setattr(server, "manager", test_manager)
 
+    # 重置任务执行器单例，确保每个测试有干净的线程池
+    from app.core.executor import TaskExecutor
+    TaskExecutor._instance = None
+    executor = TaskExecutor()
+    executor.set_manager(test_manager)
+
     server.app.config.update(TESTING=True)
     with server.app.test_client() as test_client:
         yield test_client
+    
+    # 清理：关闭任务执行器
+    try:
+        executor.shutdown(wait=True)
+    except Exception:
+        pass
+    TaskExecutor._instance = None

@@ -14,6 +14,16 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
+// 全局错误处理
+app.config.errorHandler = (err, vm, info) => {
+  console.error('[Vue Error]', err, info)
+}
+
+// 路由错误处理
+router.onError((error) => {
+  console.error('[Router Error]', error)
+})
+
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus)

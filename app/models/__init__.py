@@ -6,6 +6,7 @@
 from .account import Account, AccountStatus
 from .article import Article, ArticleStatus
 from .pipeline import PipelineRecord, PipelineStatus
+from .task import Task, TaskStatus, TaskName
 from .inspiration import InspirationRecord, InspirationStatus
 from .style_preset import StylePreset, WritingTone, WritingStyle
 
@@ -21,4 +22,7 @@ __all__ = [
     "StylePreset",
     "WritingTone",
     "WritingStyle",
+    "Task",
+    "TaskStatus",
+    "TaskName",
 ]

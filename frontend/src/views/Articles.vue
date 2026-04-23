@@ -81,7 +81,7 @@
                 v-if="row.status === 'rewritten'"
                 size="small" 
                 type="success"
-                @click="publish(row.id)"
+                @click="openPublishDialog(row.id)"
               >
                 发布
               </el-button>
@@ -96,6 +96,29 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 发布对话框 -->
+      <el-dialog v-model="publishDialogVisible" title="选择发布模板" width="500px">
+        <div class="template-grid">
+          <div 
+            v-for="(tpl, key) in templates" 
+            :key="key"
+            class="template-item"
+            :class="{ active: selectedTemplate === key }"
+            @click="selectedTemplate = key"
+          >
+            <el-icon :size="32" class="mb-2"><Document /></el-icon>
+            <div class="name">{{ tpl.name }}</div>
+            <div class="desc">{{ tpl.description }}</div>
+          </div>
+        </div>
+        <template #footer>
+          <el-button @click="publishDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmPublish" :loading="publishing">
+            确认发布
+          </el-button>
+        </template>
+      </el-dialog>
     </el-card>
   </div>
 </template>
@@ -103,8 +126,9 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Refresh, Document } from '@element-plus/icons-vue'
+import api from '../api'
 import { useArticleStore, useAppStore } from '../stores'
 
 const router = useRouter()
@@ -113,6 +137,11 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const filterStatus = ref('')
+const publishDialogVisible = ref(false)
+const publishArticleId = ref('')
+const templates = ref({})
+const selectedTemplate = ref('default')
+const publishing = ref(false)
 
 const filteredArticles = computed(() => {
   if (!filterStatus.value) return articleStore.articles
@@ -161,19 +190,32 @@ async function loadData() {
 }
 
 function goRewrite(id) {
-  router.push(`/rewrite?id=${id}`)
+  router.push({ name: 'Rewrite', query: { id } })
 }
 
-async function publish(id) {
+async function openPublishDialog(id) {
+  publishArticleId.value = id
   try {
-    await ElMessageBox.confirm('确定要发布这篇文章吗？', '确认发布')
-    await articleStore.publish(id, 'default')
-    ElMessage.success('发布成功')
+    const data = await api.templates.list()
+    templates.value = data
+    selectedTemplate.value = 'default'
+    publishDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error('加载模板失败')
+  }
+}
+
+async function confirmPublish() {
+  publishing.value = true
+  try {
+    const result = await articleStore.publish(publishArticleId.value, selectedTemplate.value)
+    ElMessage.success(`发布任务已创建: ${result.task_id?.slice(0, 8)}...`)
+    publishDialogVisible.value = false
     loadData()
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.message || '发布失败')
-    }
+    ElMessage.error(error.message || '发布失败')
+  } finally {
+    publishing.value = false
   }
 }
 
@@ -209,5 +251,39 @@ watch(() => appStore.selectedAccountId, () => {
 
 .text-gray-400 {
   color: #94a3b8;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.template-item {
+  padding: 24px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.template-item:hover {
+  border-color: #4f46e5;
+}
+
+.template-item.active {
+  border-color: #4f46e5;
+  background: #eef2ff;
+}
+
+.template-item .name {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.template-item .desc {
+  font-size: 12px;
+  color: #64748b;
 }
 </style>

@@ -139,6 +139,19 @@ install_deps() {
     success "所有依赖安装完成"
 }
 
+# 释放端口（如果被占用）
+free_port() {
+    local port="$1"
+    local pids
+    pids=$(lsof -ti:"$port" 2>/dev/null)
+    if [ -n "$pids" ]; then
+        warning "端口 $port 被占用，正在释放..."
+        echo "$pids" | xargs kill -9 2>/dev/null
+        sleep 1
+        info "端口 $port 已释放"
+    fi
+}
+
 # 启动后端服务
 start_backend() {
     local host="${HOST:-127.0.0.1}"
@@ -148,17 +161,22 @@ start_backend() {
     info "访问地址: http://$host:$port/admin"
     info "API 地址: http://$host:$port/api"
     
+    # 检查并释放端口
+    free_port "$port"
+    
     # 检查虚拟环境和依赖
-    if [ ! -f "$VENV_PYTHON" ]; then
-        warning "虚拟环境不存在，正在创建..."
-        setup_venv
-        install_backend_deps
+    local PYTHON_EXEC="$VENV_PYTHON"
+    if [ ! -f "$PYTHON_EXEC" ]; then
+        warning "虚拟环境 Python 不存在，尝试系统 python3..."
+        PYTHON_EXEC="python3"
     fi
     
     # 检查 flask 是否安装
-    if ! "$VENV_PYTHON" -c "import flask" 2>/dev/null; then
+    if ! "$PYTHON_EXEC" -c "import flask" 2>/dev/null; then
         warning "依赖未安装，正在安装..."
+        setup_venv
         install_backend_deps
+        PYTHON_EXEC="$VENV_PYTHON"
     fi
     
     cd "$PROJECT_DIR"
@@ -167,7 +185,7 @@ start_backend() {
     success "后端服务已启动"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    "$VENV_PYTHON" -m app.api.server --host "$host" --port "$port"
+    "$PYTHON_EXEC" main.py server --host "$host" --port "$port"
 }
 
 # 启动前端开发服务器
@@ -296,6 +314,20 @@ clean_cache() {
     success "清理完成"
 }
 
+# 一键启动（backend + 构建检查）
+start_all() {
+    info "AutoPlatform 一键启动..."
+    check_python
+    
+    # 检查前端构建产物
+    if [ ! -f "$PROJECT_DIR/app/static/dist/index.html" ]; then
+        warning "前端未构建，后台 API 仍可访问"
+        info "如需构建前端，运行: ./run.sh build"
+    fi
+    
+    start_backend
+}
+
 # 解析参数
 HOST="127.0.0.1"
 PORT=""
@@ -338,6 +370,9 @@ done
 
 # 执行命令
 case "${COMMAND:-help}" in
+    start)
+        start_all
+        ;;
     backend)
         check_python
         start_backend

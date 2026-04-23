@@ -1,23 +1,51 @@
 """
 API服务
 """
+import os
+import time
 from flask import Flask, jsonify, request, send_from_directory, redirect
+from werkzeug.exceptions import HTTPException
 from app.core import AppManager
+from app.core.logger import get_logger
 from app.config import get_settings
 
-import os
+logger = get_logger("api")
 
 # 获取项目路径
 app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Vue 构建输出目录
 vue_dist_dir = os.path.join(app_dir, "static", "dist")
+vue_assets_dir = os.path.join(vue_dist_dir, "assets")
 
 app = Flask(__name__, 
-            static_folder=vue_dist_dir if os.path.exists(vue_dist_dir) else os.path.join(app_dir, 'static'),
-            static_url_path='')
+            static_folder=vue_assets_dir if os.path.exists(vue_assets_dir) else os.path.join(app_dir, 'static'),
+            static_url_path='/assets')
 
 manager = AppManager()
+
+@app.before_request
+def log_request():
+    request._start_time = time.time()
+
+
+@app.after_request
+def log_response(response):
+    duration = int((time.time() - getattr(request, "_start_time", time.time())) * 1000)
+    logger.info(
+        f"{request.method} {request.path} | status={response.status_code} | {duration}ms"
+    )
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    # HTTPException（如 404 NotFound）交给 Flask 正常处理，不转为 500
+    if isinstance(e, HTTPException):
+        return e
+    logger.error(f"Unhandled exception: {type(e).__name__}: {e}", exc_info=True)
+    return jsonify({"error": "Internal server error"}), 500
+
 
 @app.route("/api/health", methods=["GET"])
 def health():
@@ -75,13 +103,18 @@ def get_global_stats():
 
 @app.route("/api/inspirations", methods=["POST"])
 def collect_inspiration():
+    """创建采集任务（异步执行）"""
     data = request.json
-    import asyncio
-    record = asyncio.run(manager.collect_inspiration(
-        url=data["url"],
-        account_id=data["account_id"]
-    ))
-    return jsonify(record.model_dump())
+    task = manager.create_task(
+        name="collect",
+        payload={"url": data["url"]},
+        account_id=data.get("account_id", "default"),
+    )
+    return jsonify({
+        "task_id": task.id,
+        "status": task.status.value,
+        "message": "采集任务已创建"
+    }), 202
 
 @app.route("/api/inspirations", methods=["GET"])
 def list_inspirations():
@@ -95,6 +128,13 @@ def get_inspiration(record_id):
     if not record:
         return jsonify({"error": "Inspiration not found"}), 404
     return jsonify(record.model_dump())
+
+@app.route("/api/inspirations/<record_id>", methods=["DELETE"])
+def delete_inspiration(record_id):
+    success = manager.storage.delete_inspiration(record_id)
+    if not success:
+        return jsonify({"error": "Delete failed or inspiration not found"}), 400
+    return jsonify({"success": True})
 
 @app.route("/api/inspirations/<record_id>/approve", methods=["POST"])
 def approve_inspiration(record_id):
@@ -121,21 +161,24 @@ def get_article(article_id):
 
 @app.route("/api/articles/<article_id>/rewrite", methods=["POST"])
 def rewrite_article(article_id):
-    import asyncio
+    """创建改写任务（异步执行）"""
     data = request.json or {}
-    style = data.get("style")
-    use_references = data.get("use_references", True)
-    custom_instructions = data.get("instructions")
-    inspiration_ids = data.get("inspiration_ids")  # 指定参考的灵感ID列表
-    
-    article = asyncio.run(manager.rewrite_article(
-        article_id,
-        style=style,
-        use_references=use_references,
-        custom_instructions=custom_instructions,
-        inspiration_ids=inspiration_ids
-    ))
-    return jsonify(article.model_dump())
+    task = manager.create_task(
+        name="rewrite",
+        payload={
+            "article_id": article_id,
+            "style": data.get("style"),
+            "use_references": data.get("use_references", True),
+            "custom_instructions": data.get("instructions"),
+            "inspiration_ids": data.get("inspiration_ids"),
+        },
+        target_id=article_id,
+    )
+    return jsonify({
+        "task_id": task.id,
+        "status": task.status.value,
+        "message": "改写任务已创建"
+    }), 202
 
 @app.route("/api/styles", methods=["GET"])
 def list_styles():
@@ -189,11 +232,21 @@ def toggle_style(preset_id):
 
 @app.route("/api/articles/<article_id>/publish", methods=["POST"])
 def publish_article(article_id):
-    import asyncio
+    """创建发布任务（异步执行）"""
     data = request.json or {}
-    template = data.get("template", "default")
-    article = asyncio.run(manager.publish_article(article_id, template=template))
-    return jsonify(article.model_dump())
+    task = manager.create_task(
+        name="publish",
+        payload={
+            "article_id": article_id,
+            "template": data.get("template", "default"),
+        },
+        target_id=article_id,
+    )
+    return jsonify({
+        "task_id": task.id,
+        "status": task.status.value,
+        "message": "发布任务已创建"
+    }), 202
 
 @app.route("/api/templates", methods=["GET"])
 def list_templates():
@@ -225,15 +278,81 @@ def preview_template(template_name):
     html = template.render(title=title, content=content, author=author)
     return jsonify({"html": html})
 
+@app.route("/api/tasks", methods=["POST"])
+def create_task():
+    """通用任务创建接口"""
+    data = request.json
+    task = manager.create_task(
+        name=data["name"],
+        payload=data.get("payload", {}),
+        account_id=data.get("account_id", ""),
+        target_id=data.get("target_id", ""),
+    )
+    return jsonify({
+        "task_id": task.id,
+        "status": task.status.value,
+    }), 202
+
+
+@app.route("/api/tasks", methods=["GET"])
+def list_tasks():
+    """获取任务列表"""
+    account_id = request.args.get("account_id")
+    status = request.args.get("status")
+    name = request.args.get("name")
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    tasks = manager.storage.list_tasks(
+        account_id=account_id,
+        status=status,
+        name=name,
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify([t.model_dump() for t in tasks])
+
+
+@app.route("/api/tasks/<task_id>", methods=["GET"])
+def get_task(task_id):
+    """获取单个任务"""
+    task = manager.storage.get_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    return jsonify(task.model_dump())
+
+
+@app.route("/api/tasks/<task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    """删除/取消任务"""
+    task = manager.storage.get_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    # 运行中的任务不允许删除
+    from app.models import TaskStatus
+    if task.status == TaskStatus.RUNNING:
+        return jsonify({"error": "Cannot delete a running task"}), 400
+    success = manager.storage.delete_task(task_id)
+    return jsonify({"success": success})
+
+
 @app.route("/api/pipeline/process", methods=["POST"])
 def process_pipeline():
+    """批量处理任务（异步执行）"""
     data = request.json
-    import asyncio
-    asyncio.run(manager.process_pipeline(
+    task = manager.create_task(
+        name="batch",
+        payload={
+            "batch_size": data.get("batch_size", 3),
+            "style": data.get("style"),
+            "template": data.get("template", "default"),
+        },
         account_id=data.get("account_id", "default"),
-        batch_size=data.get("batch_size", 3)
-    ))
-    return jsonify({"status": "ok"})
+    )
+    return jsonify({
+        "task_id": task.id,
+        "status": task.status.value,
+        "message": "批量处理任务已创建"
+    }), 202
 
 # ============ Vue 前端静态文件服务 ============
 
@@ -242,6 +361,31 @@ def process_pipeline():
 def legacy_admin(subpath):
     """兼容历史后台入口 /admin"""
     return redirect("/")
+
+@app.route("/favicon.ico")
+def favicon():
+    """返回空 favicon，避免 404"""
+    return "", 204
+
+
+@app.route("/local_images/<path:subpath>")
+def local_images(subpath):
+    """提供采集的本地图片"""
+    from app.config import get_settings
+    import os
+    from flask import send_from_directory
+    
+    settings = get_settings()
+    image_dir = str(settings.data_dir / "images")
+    file_path = os.path.join(image_dir, subpath)
+    
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        directory = os.path.dirname(file_path)
+        filename = os.path.basename(file_path)
+        return send_from_directory(directory, filename)
+    
+    return jsonify({"error": "Image not found"}), 404
+
 
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
@@ -260,7 +404,7 @@ def serve_vue(path):
         if path and os.path.exists(file_path) and os.path.isfile(file_path):
             return send_from_directory(dist_dir, path)
         return send_from_directory(dist_dir, "index.html")
-    
+
     # 如果没有构建的 Vue 文件，返回提示
     return """
     <h1>AutoPlatform API Server</h1>
@@ -291,9 +435,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    print(f"🚀 AutoPlatform API Server")
-    print(f"📍 地址: http://{args.host}:{args.port}")
-    print(f"🔧 模式: {'调试' if args.debug else '生产'}")
-    print()
+    logger.info(f"AutoPlatform API Server starting at http://{args.host}:{args.port} (debug={args.debug})")
     
     run_server(host=args.host, port=args.port, debug=args.debug)

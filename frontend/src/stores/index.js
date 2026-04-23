@@ -143,12 +143,17 @@ export const useInspirationStore = defineStore('inspirations', () => {
   async function approve(id) {
     return await api.inspirations.approve(id)
   }
-  
+
+  async function deleteInspiration(id) {
+    return await api.inspirations.delete(id)
+  }
+
   return {
     inspirations,
     fetchInspirations,
     collect,
-    approve
+    approve,
+    deleteInspiration
   }
 })
 
@@ -184,5 +189,77 @@ export const useArticleStore = defineStore('articles', () => {
     getArticle,
     rewrite,
     publish
+  }
+})
+
+// 任务状态
+export const useTaskStore = defineStore('tasks', () => {
+  const tasks = ref([])
+  const taskStats = ref({})
+  const loading = ref(false)
+  
+  async function fetchTasks(params = {}) {
+    loading.value = true
+    try {
+      const data = await api.tasks.list(params)
+      tasks.value = data
+      return data
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  async function getTask(id) {
+    const data = await api.tasks.get(id)
+    return data
+  }
+  
+  async function createTask(data) {
+    return await api.tasks.create(data)
+  }
+  
+  async function deleteTask(id) {
+    await api.tasks.delete(id)
+  }
+  
+  async function pollTask(id, interval = 2000, maxAttempts = 60) {
+    // 轮询任务状态直到完成或失败
+    for (let i = 0; i < maxAttempts; i++) {
+      const task = await getTask(id)
+      if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+        return task
+      }
+      await new Promise(resolve => setTimeout(resolve, interval))
+    }
+    throw new Error('轮询超时')
+  }
+  
+  const pendingCount = computed(() => {
+    const stats = taskStats.value || {}
+    return (stats.pending || 0) + (stats.running || 0)
+  })
+  
+  const completedCount = computed(() => {
+    const stats = taskStats.value || {}
+    return stats.completed || 0
+  })
+  
+  const failedCount = computed(() => {
+    const stats = taskStats.value || {}
+    return stats.failed || 0
+  })
+  
+  return {
+    tasks,
+    taskStats,
+    loading,
+    pendingCount,
+    completedCount,
+    failedCount,
+    fetchTasks,
+    getTask,
+    createTask,
+    deleteTask,
+    pollTask
   }
 })

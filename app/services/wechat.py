@@ -174,6 +174,7 @@ class WechatService:
     def render_with_template(self, title: str, content: str, 
                             template_name: str = "default",
                             author: str = "", cover_image: str = "",
+                            full_html: bool = False,
                             **kwargs) -> str:
         """
         使用模板渲染文章
@@ -184,10 +185,11 @@ class WechatService:
             template_name: 模板名称
             author: 作者
             cover_image: 封面图片
+            full_html: 是否输出完整 HTML 文档（默认 False，输出片段适合微信草稿）
             **kwargs: 其他参数
             
         Returns:
-            渲染后的完整HTML
+            渲染后的HTML
         """
         from app.templates import TemplateRegistry
         
@@ -199,13 +201,25 @@ class WechatService:
             template = TemplateRegistry.create_instance("default")
         
         # 渲染内容
-        html = template.render(
-            title=title,
-            content=content,
-            author=author,
-            cover_image=cover_image,
-            **kwargs
-        )
+        if full_html:
+            html = template.render(
+                title=title,
+                content=content,
+                author=author,
+                cover_image=cover_image,
+                **kwargs
+            )
+        else:
+            html = template.render_fragment(
+                title=title,
+                content=content,
+                author=author,
+                cover_image=cover_image,
+                **kwargs
+            )
+        
+        # 微信格式化处理
+        html = self.format_content(html)
         
         return html
     

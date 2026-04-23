@@ -4,7 +4,7 @@
     <el-aside width="240px" class="sidebar">
       <div class="logo">
         <el-icon :size="28" color="#4f46e5"><Cpu /></el-icon>
-        <span>AutoPlatform</span>
+        <span>公众号自动发布系统</span>
       </div>
       
       <el-menu
@@ -17,7 +17,7 @@
       >
         <el-menu-item v-for="route in menuRoutes" :key="route.path" :index="'/' + route.path">
           <el-icon>
-            <component :is="route.meta.icon" />
+            <component :is="iconMap[route.meta.icon]" />
           </el-icon>
           <span>{{ route.meta.title }}</span>
         </el-menu-item>
@@ -56,12 +56,20 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Cpu } from '@element-plus/icons-vue'
+import {
+  Cpu, HomeFilled, UserFilled, Document, MagicStick,
+  Collection, BrushFilled, List
+} from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 
 const route = useRoute()
 const accountStore = useAccountStore()
 const appStore = useAppStore()
+
+const iconMap = {
+  Cpu, HomeFilled, UserFilled, Document, MagicStick,
+  Collection, BrushFilled, List
+}
 
 const menuRoutes = computed(() => {
   return route.matched[0]?.children || []

@@ -44,8 +44,8 @@ class StylePreset(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": "tech_expert",
                 "name": "科技专家",
@@ -58,3 +58,4 @@ class StylePreset(BaseModel):
                 "is_active": True
             }
         }
+    }

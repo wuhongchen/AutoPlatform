@@ -158,11 +158,19 @@ def preview(
 @app.command()
 def pipeline(
     account: str = typer.Option("default", "--account", "-a", help="账户ID"),
-    batch: int = typer.Option(3, "--batch", "-b", help="批处理大小")
+    batch: int = typer.Option(3, "--batch", "-b", help="批处理大小"),
+    style: str = typer.Option(None, "--style", "-s", help="改写风格预设"),
+    template: str = typer.Option("default", "--template", "-t", help="发布模板")
 ):
     """运行流水线"""
     console.print(f"[blue]开始处理流水线...[/blue]")
-    asyncio.run(manager.process_pipeline(account, batch))
+    console.print(f"  账户: {account} | 批次: {batch} | 风格: {style or '默认'} | 模板: {template}")
+    asyncio.run(manager.process_pipeline(
+        account_id=account,
+        batch_size=batch,
+        style=style,
+        template=template
+    ))
     console.print(f"[green]流水线处理完成[/green]")
 
 @app.command()

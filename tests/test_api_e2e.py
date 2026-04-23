@@ -1,3 +1,6 @@
+import time
+
+
 def _create_account(client, account_id: str, name: str = "Test Account"):
     payload = {
         "name": name,
@@ -10,14 +13,37 @@ def _create_account(client, account_id: str, name: str = "Test Account"):
     return resp.get_json()
 
 
+def _poll_task(client, task_id: str, timeout: float = 5.0):
+    """轮询异步任务直到完成或失败"""
+    for _ in range(int(timeout * 10)):
+        resp = client.get(f"/api/tasks/{task_id}")
+        if resp.status_code == 200:
+            task = resp.get_json()
+            if task["status"] in ("completed", "failed"):
+                return task
+        time.sleep(0.1)
+    raise TimeoutError(f"Task {task_id} did not complete within {timeout}s")
+
+
 def _collect_and_approve(client, account_id: str, seed: str):
+    # 1. 创建采集任务
     collect_resp = client.post(
         "/api/inspirations",
         json={"url": f"https://example.com/{seed}", "account_id": account_id},
     )
-    assert collect_resp.status_code == 200, collect_resp.get_json()
-    inspiration = collect_resp.get_json()
+    assert collect_resp.status_code == 202, collect_resp.get_json()
+    task_info = collect_resp.get_json()
 
+    # 2. 轮询任务完成
+    task_result = _poll_task(client, task_info["task_id"])
+    assert task_result["status"] == "completed", task_result
+
+    # 3. 获取刚创建的灵感记录
+    insp_list = client.get(f"/api/inspirations?account_id={account_id}").get_json()
+    assert len(insp_list) > 0
+    inspiration = insp_list[0]
+
+    # 4. 采纳
     approve_resp = client.post(f"/api/inspirations/{inspiration['id']}/approve")
     assert approve_resp.status_code == 200, approve_resp.get_json()
     return inspiration, approve_resp.get_json()
@@ -58,17 +84,17 @@ def test_accounts_crud_stats_and_global_stats(client):
     stats_resp = client.get("/api/accounts/acc_a/stats")
     assert stats_resp.status_code == 200
     stats = stats_resp.get_json()
-    assert set(stats.keys()) == {"articles", "pipeline", "inspiration"}
+    assert set(stats.keys()) == {"articles", "tasks", "inspiration"}
 
     global_stats_resp = client.get("/api/stats")
     assert global_stats_resp.status_code == 200
     global_stats = global_stats_resp.get_json()
-    assert set(global_stats.keys()) == {"articles", "pipeline", "inspiration"}
+    assert set(global_stats.keys()) == {"articles", "tasks", "inspiration"}
 
     scoped_stats_resp = client.get("/api/stats?account_id=acc_a")
     assert scoped_stats_resp.status_code == 200
     scoped_stats = scoped_stats_resp.get_json()
-    assert set(scoped_stats.keys()) == {"articles", "pipeline", "inspiration"}
+    assert set(scoped_stats.keys()) == {"articles", "tasks", "inspiration"}
 
     delete_resp = client.delete("/api/accounts/acc_b")
     assert delete_resp.status_code == 200
@@ -158,22 +184,36 @@ def test_inspiration_article_templates_publish_and_pipeline(client):
     assert article_get_resp.status_code == 200
     assert article_get_resp.get_json()["status"] == "pending"
 
+    # 改写改为异步任务
     rewrite_resp = client.post(
         f"/api/articles/{article_id}/rewrite",
         json={"style": "tech_expert", "use_references": True},
     )
-    assert rewrite_resp.status_code == 200, rewrite_resp.get_json()
-    rewritten = rewrite_resp.get_json()
+    assert rewrite_resp.status_code == 202, rewrite_resp.get_json()
+    rewrite_task = _poll_task(client, rewrite_resp.get_json()["task_id"])
+    assert rewrite_task["status"] == "completed"
+
+    # 验证文章已改写
+    rewritten_resp = client.get(f"/api/articles/{article_id}")
+    assert rewritten_resp.status_code == 200
+    rewritten = rewritten_resp.get_json()
     assert rewritten["status"] == "rewritten"
     assert rewritten["rewrite_style"] == "tech_expert"
     assert "Mock Rewritten" in rewritten["rewritten_html"]
 
+    # 发布改为异步任务
     publish_resp = client.post(
         f"/api/articles/{article_id}/publish",
         json={"template": "default"},
     )
-    assert publish_resp.status_code == 200, publish_resp.get_json()
-    published = publish_resp.get_json()
+    assert publish_resp.status_code == 202, publish_resp.get_json()
+    publish_task = _poll_task(client, publish_resp.get_json()["task_id"])
+    assert publish_task["status"] == "completed"
+
+    # 验证文章已发布
+    published_resp = client.get(f"/api/articles/{article_id}")
+    assert published_resp.status_code == 200
+    published = published_resp.get_json()
     assert published["status"] == "published"
     assert published["wechat_draft_id"] == "mock_draft_id_001"
 
@@ -193,12 +233,14 @@ def test_inspiration_article_templates_publish_and_pipeline(client):
     _, pending_article = _collect_and_approve(client, "acc_flow", "second")
     pending_article_id = pending_article["id"]
 
+    # 流水线改为异步批量任务
     pipeline_resp = client.post(
         "/api/pipeline/process",
         json={"account_id": "acc_flow", "batch_size": 10},
     )
-    assert pipeline_resp.status_code == 200
-    assert pipeline_resp.get_json()["status"] == "ok"
+    assert pipeline_resp.status_code == 202
+    pipeline_task = _poll_task(client, pipeline_resp.get_json()["task_id"])
+    assert pipeline_task["status"] == "completed"
 
     processed_article_resp = client.get(f"/api/articles/{pending_article_id}")
     assert processed_article_resp.status_code == 200
@@ -210,3 +252,9 @@ def test_inspiration_article_templates_publish_and_pipeline(client):
     assert scoped_stats_resp.status_code == 200
     scoped_stats = scoped_stats_resp.get_json()
     assert scoped_stats["articles"].get("published", 0) >= 2
+
+    # 任务看板 API 验证
+    tasks_resp = client.get("/api/tasks", query_string={"account_id": "acc_flow"})
+    assert tasks_resp.status_code == 200
+    tasks = tasks_resp.get_json()
+    assert len(tasks) >= 3  # collect + rewrite + publish + batch + collect (异步线程可能还在执行中)

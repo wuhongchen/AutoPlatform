@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Type, TypeVar
 from contextlib import contextmanager
 
 from app.config import get_settings
-from app.models import Account, Article, PipelineRecord, InspirationRecord, StylePreset
+from app.models import Account, Article, PipelineRecord, InspirationRecord, StylePreset, Task, TaskStatus
 
 T = TypeVar("T")
 
@@ -148,6 +148,27 @@ class StorageService:
                 )
             """)
             
+            # 任务表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    payload TEXT DEFAULT '{}',
+                    status TEXT DEFAULT 'pending',
+                    result TEXT DEFAULT '{}',
+                    error_message TEXT DEFAULT '',
+                    account_id TEXT DEFAULT '',
+                    target_id TEXT DEFAULT '',
+                    started_at TEXT,
+                    completed_at TEXT,
+                    retry_count INTEGER DEFAULT 0,
+                    max_retries INTEGER DEFAULT 3,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            
             # 风格预设表
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS style_presets (
@@ -188,7 +209,7 @@ class StorageService:
         for key in row.keys():
             value = row[key]
             # 解析JSON字段
-            if key in ["metadata", "images", "result", "params", "rewrite_references"] and isinstance(value, str):
+            if key in ["metadata", "images", "result", "params", "rewrite_references", "payload"] and isinstance(value, str):
                 try:
                     value = json.loads(value)
                 except json.JSONDecodeError:
@@ -246,7 +267,7 @@ class StorageService:
     
     def update_account(self, account_id: str, data: Dict[str, Any]) -> bool:
         """更新账户"""
-        # 过滤掉None值
+        # 过滤掉未显式传入的键（值为None视为未设置），但允许空字符串/0/False
         data = {k: v for k, v in data.items() if v is not None}
         if not data:
             return False
@@ -528,8 +549,8 @@ class StorageService:
             rows = conn.execute(query, params).fetchall()
             stats["articles"] = {row["status"]: row["count"] for row in rows}
             
-            # 流水线统计
-            query = "SELECT status, COUNT(*) as count FROM pipeline_records"
+            # 任务统计
+            query = "SELECT status, COUNT(*) as count FROM tasks"
             params = []
             if account_id:
                 query += " WHERE account_id = ?"
@@ -537,7 +558,7 @@ class StorageService:
             query += " GROUP BY status"
             
             rows = conn.execute(query, params).fetchall()
-            stats["pipeline"] = {row["status"]: row["count"] for row in rows}
+            stats["tasks"] = {row["status"]: row["count"] for row in rows}
             
             # 灵感库统计
             query = "SELECT status, COUNT(*) as count FROM inspiration_records"
@@ -690,3 +711,123 @@ class StorageService:
                             json.dumps(preset.params),
                         )
                     )
+
+    def delete_inspiration(self, record_id: str) -> bool:
+        """删除灵感记录"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM inspiration_records WHERE id = ?",
+                (record_id,)
+            )
+            return cursor.rowcount > 0
+
+    # ============ 任务操作 ============
+    def create_task(self, task: Task) -> Task:
+        """创建任务记录"""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (id, name, payload, status, result, error_message,
+                    account_id, target_id, max_retries)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task.id,
+                    task.name.value,
+                    json.dumps(task.payload),
+                    task.status.value,
+                    json.dumps(task.result),
+                    task.error_message,
+                    task.account_id,
+                    task.target_id,
+                    task.max_retries,
+                )
+            )
+        return task
+
+    def get_task(self, task_id: str) -> Optional[Task]:
+        """获取任务"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE id = ?",
+                (task_id,)
+            ).fetchone()
+            if row:
+                return Task.model_validate(self._row_to_dict(row))
+            return None
+
+    def list_tasks(self, account_id: Optional[str] = None,
+                   status: Optional[str] = None,
+                   name: Optional[str] = None,
+                   limit: int = 100,
+                   offset: int = 0) -> List[Task]:
+        """列出任务"""
+        query = "SELECT * FROM tasks WHERE 1=1"
+        params = []
+
+        if account_id:
+            query += " AND account_id = ?"
+            params.append(account_id)
+
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        if name:
+            query += " AND name = ?"
+            params.append(name)
+
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [Task.model_validate(self._row_to_dict(row)) for row in rows]
+
+    def update_task(self, task_id: str, data: Dict[str, Any]) -> bool:
+        """更新任务"""
+        data = {k: v for k, v in data.items() if v is not None}
+        if not data:
+            return False
+
+        if "payload" in data and isinstance(data["payload"], dict):
+            data["payload"] = json.dumps(data["payload"])
+        if "result" in data and isinstance(data["result"], dict):
+            data["result"] = json.dumps(data["result"])
+        if "status" in data and hasattr(data["status"], "value"):
+            data["status"] = data["status"].value
+        if "name" in data and hasattr(data["name"], "value"):
+            data["name"] = data["name"].value
+
+        data["updated_at"] = datetime.now().isoformat()
+
+        fields = ", ".join([f"{k} = ?" for k in data.keys()])
+        values = list(data.values()) + [task_id]
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE tasks SET {fields} WHERE id = ?",
+                values
+            )
+            return cursor.rowcount > 0
+
+    def delete_task(self, task_id: str) -> bool:
+        """删除任务"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM tasks WHERE id = ?",
+                (task_id,)
+            )
+            return cursor.rowcount > 0
+
+    def get_task_stats(self, account_id: Optional[str] = None) -> Dict[str, int]:
+        """获取任务统计"""
+        with self._get_connection() as conn:
+            query = "SELECT status, COUNT(*) as count FROM tasks"
+            params = []
+            if account_id:
+                query += " WHERE account_id = ?"
+                params.append(account_id)
+            query += " GROUP BY status"
+            rows = conn.execute(query, params).fetchall()
+            return {row["status"]: row["count"] for row in rows}

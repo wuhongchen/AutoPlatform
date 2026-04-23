@@ -29,27 +29,50 @@
         </el-card>
 
         <!-- 改写结果 -->
-        <el-card v-if="result" shadow="never" class="result-card">
+        <el-card v-if="result || activeTask" shadow="never" class="result-card">
           <template #header>
             <div class="card-header">
               <span>改写结果</span>
-              <div>
+              <div v-if="activeTask">
+                <el-tag :type="taskStatusType" size="small" effect="dark" class="mr-2">
+                  {{ taskStatusLabel }}
+                </el-tag>
+                <el-button v-if="activeTask.status === 'completed'" type="primary" link size="small" @click="refreshArticle">
+                  <el-icon><Refresh /></el-icon>刷新
+                </el-button>
+              </div>
+              <div v-else>
                 <el-tag type="info" class="mr-2">风格: {{ result.rewrite_style }}</el-tag>
                 <el-tag type="success">参考: {{ result.metadata?.reference_count || 0 }}篇</el-tag>
               </div>
             </div>
           </template>
           
-          <div class="rewritten-content" v-html="result.rewritten_html" />
-          
-          <div class="result-actions">
-            <el-button type="primary" @click="openPublishDialog">
-              <el-icon><Promotion /></el-icon>发布文章
-            </el-button>
-            <el-button @click="copyResult">
-              <el-icon><CopyDocument /></el-icon>复制内容
-            </el-button>
+          <div v-if="activeTask && activeTask.status === 'running'" class="task-running">
+            <el-skeleton :rows="6" animated />
+            <p class="task-hint">任务正在后台执行中，可前往任务看板查看进度...</p>
           </div>
+          
+          <div v-else-if="activeTask && activeTask.status === 'failed'" class="task-failed">
+            <el-result icon="error" title="改写失败">
+              <template #sub-title>
+                <p>{{ activeTask.error_message }}</p>
+              </template>
+            </el-result>
+          </div>
+          
+          <template v-else>
+            <div class="rewritten-content" v-html="result?.rewritten_html || article?.rewritten_html" />
+            
+            <div class="result-actions">
+              <el-button type="primary" @click="openPublishDialog">
+                <el-icon><Promotion /></el-icon>发布文章
+              </el-button>
+              <el-button @click="copyResult">
+                <el-icon><CopyDocument /></el-icon>复制内容
+              </el-button>
+            </div>
+          </template>
         </el-card>
       </el-col>
 
@@ -79,8 +102,19 @@
             </div>
           </el-card>
 
-          <!-- 灵感选择 -->
+          <!-- 改写模式 -->
           <el-card shadow="never" class="mb-4">
+            <template #header>改写模式</template>
+            <el-radio-group v-model="config.rewrite_mode" style="width: 100%">
+              <el-radio-button label="manual">手动参考</el-radio-button>
+              <el-radio-button label="auto">自动参考</el-radio-button>
+              <el-radio-button label="none">无参考</el-radio-button>
+            </el-radio-group>
+            <p class="mode-desc">{{ modeDescription }}</p>
+          </el-card>
+
+          <!-- 灵感选择 -->
+          <el-card v-if="config.rewrite_mode === 'manual'" shadow="never" class="mb-4">
             <template #header>
               <div class="flex justify-between items-center">
                 <span>参考灵感</span>
@@ -137,8 +171,14 @@
             @click="startRewrite"
           >
             <el-icon class="mr-1"><MagicStick /></el-icon>
-            {{ rewriting ? '改写中...' : '开始改写' }}
+            {{ rewriting ? '创建任务中...' : '开始改写' }}
           </el-button>
+          
+          <div v-if="activeTask" class="task-link">
+            <el-button type="info" link @click="$router.push('/tasks')">
+              去任务看板查看进度 →
+            </el-button>
+          </div>
         </div>
       </el-col>
     </el-row>
@@ -169,11 +209,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Promotion, CopyDocument, Search, Document } from '@element-plus/icons-vue'
-import { useStyleStore, useInspirationStore, useArticleStore, useAppStore } from '../stores'
+import { MagicStick, Promotion, CopyDocument, Search, Document, Refresh } from '@element-plus/icons-vue'
+import { useStyleStore, useInspirationStore, useArticleStore, useAppStore, useTaskStore } from '../stores'
 import api from '../api'
 
 const route = useRoute()
@@ -182,6 +222,7 @@ const styleStore = useStyleStore()
 const inspirationStore = useInspirationStore()
 const articleStore = useArticleStore()
 const appStore = useAppStore()
+const taskStore = useTaskStore()
 
 const articleId = computed(() => route.query.id)
 const article = computed(() => articleStore.currentArticle)
@@ -189,13 +230,15 @@ const article = computed(() => articleStore.currentArticle)
 const config = ref({
   style: '',
   instructions: '',
-  use_references: true
+  rewrite_mode: 'manual'
 })
 
 const inspirationSearch = ref('')
 const selectedInspirations = ref([])
 const rewriting = ref(false)
 const result = ref(null)
+const activeTask = ref(null)
+const pollTimer = ref(null)
 
 const publishDialogVisible = ref(false)
 const publishing = ref(false)
@@ -204,6 +247,25 @@ const selectedTemplate = ref('default')
 
 const selectedStyle = computed(() => {
   return styleStore.styles.find(s => s.id === config.value.style)
+})
+
+const taskStatusType = computed(() => {
+  const map = { pending: 'info', running: 'warning', completed: 'success', failed: 'danger', cancelled: 'info' }
+  return map[activeTask.value?.status] || 'info'
+})
+
+const taskStatusLabel = computed(() => {
+  const map = { pending: '待执行', running: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消' }
+  return map[activeTask.value?.status] || activeTask.value?.status
+})
+
+const modeDescription = computed(() => {
+  const desc = {
+    manual: '仅使用下方手动勾选的文章作为参考',
+    auto: '系统自动从灵感库筛选最相关的文章作为参考',
+    none: '不使用任何参考，仅基于原文改写'
+  }
+  return desc[config.value.rewrite_mode] || ''
 })
 
 const filteredInspirations = computed(() => {
@@ -219,12 +281,16 @@ const isMaxSelected = computed(() => selectedInspirations.value.length >= 5)
 
 async function loadData() {
   if (articleId.value) {
-    await articleStore.getArticle(articleId.value)
+    try {
+      await articleStore.getArticle(articleId.value)
+    } catch (e) {
+      console.error('加载文章失败:', e)
+      ElMessage.error('加载文章失败: ' + (e.message || '未知错误'))
+    }
   }
   await styleStore.fetchStyles()
   await loadInspirations()
   
-  // 默认选中第一个风格
   if (styleStore.activeStyles.length > 0 && !config.value.style) {
     config.value.style = styleStore.activeStyles[0].id
   }
@@ -241,19 +307,59 @@ async function startRewrite() {
   
   rewriting.value = true
   try {
-    const data = await articleStore.rewrite(articleId.value, {
+    const mode = config.value.rewrite_mode
+    const taskResult = await articleStore.rewrite(articleId.value, {
       style: config.value.style,
       instructions: config.value.instructions,
-      use_references: selectedInspirations.value.length > 0,
-      inspiration_ids: selectedInspirations.value
+      use_references: mode !== 'none',
+      inspiration_ids: mode === 'manual' ? selectedInspirations.value : undefined
     })
-    result.value = data
-    ElMessage.success('改写完成')
+    
+    ElMessage.success(`改写任务已创建: ${taskResult.task_id?.slice(0, 8)}...`)
+    activeTask.value = { id: taskResult.task_id, status: 'pending' }
+    
+    // 开始轮询
+    startPolling(taskResult.task_id)
   } catch (error) {
     ElMessage.error(error.message || '改写失败')
   } finally {
     rewriting.value = false
   }
+}
+
+function startPolling(taskId) {
+  stopPolling()
+  pollTimer.value = setInterval(async () => {
+    try {
+      const task = await taskStore.getTask(taskId)
+      activeTask.value = task
+      
+      if (task.status === 'completed') {
+        stopPolling()
+        // 自动刷新文章数据以获取改写结果
+        await articleStore.getArticle(articleId.value)
+        result.value = articleStore.currentArticle
+        ElMessage.success('改写完成')
+      } else if (task.status === 'failed') {
+        stopPolling()
+        ElMessage.error(task.error_message || '改写失败')
+      }
+    } catch (e) {
+      console.error('轮询失败:', e)
+    }
+  }, 2000)
+}
+
+function stopPolling() {
+  if (pollTimer.value) {
+    clearInterval(pollTimer.value)
+    pollTimer.value = null
+  }
+}
+
+async function refreshArticle() {
+  await articleStore.getArticle(articleId.value)
+  result.value = articleStore.currentArticle
 }
 
 async function openPublishDialog() {
@@ -270,10 +376,11 @@ async function openPublishDialog() {
 async function confirmPublish() {
   publishing.value = true
   try {
-    await articleStore.publish(articleId.value, selectedTemplate.value)
-    ElMessage.success('发布成功')
+    const taskResult = await articleStore.publish(articleId.value, selectedTemplate.value)
+    ElMessage.success(`发布任务已创建: ${taskResult.task_id?.slice(0, 8)}...`)
     publishDialogVisible.value = false
-    router.push('/articles')
+    // 跳转到任务看板
+    setTimeout(() => router.push('/tasks'), 800)
   } catch (error) {
     ElMessage.error(error.message || '发布失败')
   } finally {
@@ -282,7 +389,7 @@ async function confirmPublish() {
 }
 
 function copyResult() {
-  const content = result.value?.rewritten_html || ''
+  const content = result.value?.rewritten_html || article.value?.rewritten_html || ''
   const text = content.replace(/<[^>]+>/g, '')
   navigator.clipboard.writeText(text).then(() => {
     ElMessage.success('内容已复制')
@@ -291,6 +398,20 @@ function copyResult() {
 
 onMounted(() => {
   loadData()
+})
+
+onUnmounted(() => {
+  stopPolling()
+})
+
+// 监听路由 id 变化（从文章列表点击不同文章时）
+watch(() => route.query.id, (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    result.value = null
+    activeTask.value = null
+    stopPolling()
+    loadData()
+  }
 })
 
 watch(() => appStore.selectedAccountId, () => {
@@ -364,6 +485,13 @@ watch(() => appStore.selectedAccountId, () => {
   border-radius: 6px;
 }
 
+.mode-desc {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
 .inspiration-list {
   max-height: 300px;
   overflow-y: auto;
@@ -425,5 +553,25 @@ watch(() => appStore.selectedAccountId, () => {
 
 :deep(.el-checkbox__label) {
   flex: 1;
+}
+
+.task-running {
+  padding: 20px 0;
+}
+
+.task-hint {
+  text-align: center;
+  color: #64748b;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.task-failed {
+  padding: 20px 0;
+}
+
+.task-link {
+  text-align: center;
+  margin-top: 12px;
 }
 </style>

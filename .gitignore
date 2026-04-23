@@ -45,3 +45,9 @@ temp/
 frontend/dist/
 app/static/dist/
 frontend/node_modules/
+
+# 工具二进制
+.tools/
+
+# 采集的图片数据
+data/images/

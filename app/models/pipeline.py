@@ -51,8 +51,8 @@ class PipelineRecord(BaseDBModel):
     reviewer: str = Field(default="", description="审核人")
     review_note: str = Field(default="", description="审核备注")
     
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "article_id": "article_123",
                 "account_id": "main",
@@ -60,3 +60,4 @@ class PipelineRecord(BaseDBModel):
                 "role": "tech_expert",
             }
         }
+    }

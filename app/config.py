@@ -91,6 +91,9 @@ class AppConfig(BaseSettings):
     non_interactive: bool = Field(default=False, description="非交互模式")
     schema_check_enabled: bool = Field(default=True, description="启用表结构检查")
     schema_check_interval: int = Field(default=21600, description="表结构检查间隔")
+    
+    # 日志配置
+    log_level: str = Field(default="INFO", description="日志级别 (DEBUG/INFO/WARNING/ERROR)")
 
     @field_validator("debug", mode="before")
     @classmethod

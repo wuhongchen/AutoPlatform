@@ -35,7 +35,7 @@ const routes = [
         path: 'inspirations',
         name: 'Inspirations',
         component: () => import('../views/Inspirations.vue'),
-        meta: { title: '灵感库', icon: 'Lightbulb' }
+        meta: { title: '灵感库', icon: 'Collection' }
       },
       {
         path: 'styles',
@@ -44,18 +44,29 @@ const routes = [
         meta: { title: '改写风格', icon: 'BrushFilled' }
       },
       {
-        path: 'pipeline',
-        name: 'Pipeline',
-        component: () => import('../views/Pipeline.vue'),
-        meta: { title: '流水线', icon: 'Refresh' }
+        path: 'tasks',
+        name: 'Tasks',
+        component: () => import('../views/Tasks.vue'),
+        meta: { title: '任务看板', icon: 'List' }
       }
     ]
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('../views/NotFound.vue')
   }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// 路由守卫：页面切换时自动滚动到顶部
+router.beforeEach((to, from, next) => {
+  window.scrollTo(0, 0)
+  next()
 })
 
 export default router

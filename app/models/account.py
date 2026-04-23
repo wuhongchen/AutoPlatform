@@ -46,8 +46,8 @@ class Account(BaseDBModel):
     # 元数据
     metadata: Dict[str, Any] = Field(default_factory=dict, description="扩展元数据")
     
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "name": "主账号",
                 "account_id": "main",
@@ -55,3 +55,4 @@ class Account(BaseDBModel):
                 "wechat_author": "作者名",
             }
         }
+    }
