@@ -28,6 +28,8 @@ class Account(BaseDBModel):
     wechat_appid: str = Field(default="", description="微信AppID")
     wechat_secret: str = Field(default="", description="微信AppSecret")
     wechat_author: str = Field(default="W 小龙虾", description="默认作者")
+    ad_header_html: str = Field(default="", description="头部广告位 HTML")
+    ad_footer_html: str = Field(default="", description="底部广告位 HTML")
     
     # 流水线配置
     pipeline_role: str = Field(default="tech_expert", description="默认改写角色")

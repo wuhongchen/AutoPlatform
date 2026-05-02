@@ -9,6 +9,7 @@ from .pipeline import PipelineRecord, PipelineStatus
 from .task import Task, TaskStatus, TaskName
 from .inspiration import InspirationRecord, InspirationStatus
 from .style_preset import StylePreset, WritingTone, WritingStyle
+from .image_asset import ImageAsset, ImageAssetSource
 
 __all__ = [
     "Account",
@@ -22,6 +23,8 @@ __all__ = [
     "StylePreset",
     "WritingTone",
     "WritingStyle",
+    "ImageAsset",
+    "ImageAssetSource",
     "Task",
     "TaskStatus",
     "TaskName",

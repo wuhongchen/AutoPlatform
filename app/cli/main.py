@@ -2,6 +2,7 @@
 CLI入口
 """
 import asyncio
+import json
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -10,6 +11,10 @@ from app.core import AppManager
 app = typer.Typer(help="AutoPlatform CLI")
 console = Console()
 manager = AppManager()
+
+
+def _print_json(data):
+    console.print_json(data=json.dumps(data, ensure_ascii=False, default=str))
 
 @app.command()
 def account_create(
@@ -180,6 +185,80 @@ def stats(
     """查看统计"""
     stats = manager.get_stats(account)
     console.print(stats)
+
+
+@app.command()
+def wechat_ingest_status(
+    account: str = typer.Option("default", "--account", "-a", help="账户ID")
+):
+    """查看公众号登录态采集状态"""
+    _print_json(manager.wechat_ingest_status(account))
+
+
+@app.command()
+def wechat_ingest_login(
+    account: str = typer.Option("default", "--account", "-a", help="账户ID"),
+    wait: bool = typer.Option(False, "--wait", help="是否同步等待登录完成"),
+):
+    """触发公众号后台扫码登录"""
+    _print_json(manager.wechat_ingest_login(account, wait=wait))
+
+
+@app.command()
+def wechat_ingest_search_mp(
+    keyword: str = typer.Option(..., "--keyword", "-k", help="公众号关键词"),
+    account: str = typer.Option("default", "--account", "-a", help="账户ID"),
+    limit: int = typer.Option(10, "--limit", help="返回候选数量"),
+):
+    """检索公众号"""
+    _print_json(manager.wechat_ingest_search_mp(account, keyword=keyword, limit=limit))
+
+
+@app.command()
+def wechat_ingest_add_mp(
+    keyword: str = typer.Option(..., "--keyword", "-k", help="公众号关键词"),
+    account: str = typer.Option("default", "--account", "-a", help="账户ID"),
+    pick: int = typer.Option(1, "--pick", "-p", help="选择第几个候选"),
+    limit: int = typer.Option(10, "--limit", help="检索候选数量"),
+):
+    """搜索并关注公众号"""
+    _print_json(manager.wechat_ingest_add_mp(account, keyword=keyword, pick=pick, limit=limit))
+
+
+@app.command()
+def wechat_ingest_list_mp(
+    account: str = typer.Option("default", "--account", "-a", help="账户ID")
+):
+    """查看已关注公众号"""
+    _print_json(manager.wechat_ingest_list_mps(account))
+
+
+@app.command()
+def wechat_ingest_pull_articles(
+    mp_id: str = typer.Option(..., "--mp-id", help="公众号ID"),
+    account: str = typer.Option("default", "--account", "-a", help="账户ID"),
+    pages: int = typer.Option(1, "--pages", help="拉取页数"),
+    with_content: bool = typer.Option(False, "--with-content", help="是否同时抓正文"),
+):
+    """拉取公众号文章列表"""
+    _print_json(
+        manager.wechat_ingest_pull_articles(
+            account,
+            mp_id=mp_id,
+            pages=pages,
+            with_content=with_content,
+        )
+    )
+
+
+@app.command()
+def wechat_ingest_sync(
+    account: str = typer.Option("default", "--account", "-a", help="账户ID"),
+    mp_id: str = typer.Option("", "--mp-id", help="公众号ID，不传则同步最近文章"),
+    limit: int = typer.Option(20, "--limit", help="同步上限"),
+):
+    """将公众号文章同步到素材库"""
+    _print_json(manager.wechat_ingest_sync_inspirations(account, mp_id=mp_id, limit=limit))
 
 if __name__ == "__main__":
     app()

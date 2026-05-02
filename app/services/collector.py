@@ -18,6 +18,8 @@ logger = get_logger("collector")
 
 class CollectorService:
     """内容采集服务"""
+
+    ALLOWED_CONTENT_ATTRS = {"src", "data-src", "href", "alt"}
     
     def __init__(self):
         self.session = requests.Session()
@@ -61,6 +63,13 @@ class CollectorService:
                 "error": str(e),
                 "url": url
             }
+
+    def extract_content_from_html(self, html: str) -> tuple:
+        """从已有 HTML 字符串中提取正文文本和正文 HTML。"""
+        if not html:
+            return "", ""
+        soup = BeautifulSoup(html, "html.parser")
+        return self._extract_content(soup)
     
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """提取标题"""
@@ -124,23 +133,32 @@ class CollectorService:
         for selector in selectors:
             elem = soup.select_one(selector)
             if elem and len(elem.get_text(strip=True)) > 100:
-                # 清理样式（保留图片和链接关键属性）
-                for tag in elem.find_all(True):
-                    tag.attrs = {k: v for k, v in tag.attrs.items() 
-                                if k in ["src", "data-src", "href", "alt"]}
-                
-                html = str(elem)
-                text = elem.get_text(separator="\n", strip=True)
+                html = self.sanitize_content_html(str(elem))
+                text = BeautifulSoup(html, "html.parser").get_text(separator="\n", strip=True)
                 return text, html
         
         #  fallback：提取body
         body = soup.find("body")
         if body:
-            text = body.get_text(separator="\n", strip=True)
-            html = str(body)
+            html = self.sanitize_content_html(str(body))
+            text = BeautifulSoup(html, "html.parser").get_text(separator="\n", strip=True)
             return text, html
         
         return "", ""
+
+    def sanitize_content_html(self, html: str) -> str:
+        """清理采集正文中的隐藏样式，仅保留关键内容属性。"""
+        if not html:
+            return ""
+
+        fragment = BeautifulSoup(html, "html.parser")
+        for tag in fragment.find_all(True):
+            tag.attrs = {
+                key: value
+                for key, value in tag.attrs.items()
+                if key in self.ALLOWED_CONTENT_ATTRS
+            }
+        return str(fragment)
     
     def _extract_images(self, soup: BeautifulSoup, base_url: str) -> List[str]:
         """提取图片"""
@@ -238,14 +256,44 @@ class CollectorService:
         """将HTML中的图片URL替换为本地路径"""
         if not url_map:
             return html
-        
-        # 替换 src="原始URL"
-        for orig_url, local_path in url_map.items():
-            html = html.replace(f'src="{orig_url}"', f'src="{local_path}"')
-            # 也替换 data-src
-            html = html.replace(f'data-src="{orig_url}"', f'data-src="{local_path}"')
-        
-        return html
+
+        soup = BeautifulSoup(html or "", "html.parser")
+        for img in soup.find_all("img"):
+            source = img.get("data-src") or img.get("src", "")
+            if not source:
+                continue
+            local_path = url_map.get(source)
+            if not local_path:
+                continue
+            img["src"] = local_path
+            img["data-src"] = local_path
+
+        return str(soup)
+
+    def relink_local_images(self, html: str, local_images: List[str]) -> str:
+        """按顺序将正文图片重定向到本地路径，用于修复历史数据。"""
+        if not html or not local_images:
+            return html
+
+        soup = BeautifulSoup(html, "html.parser")
+        image_iter = iter(local_images)
+        changed = False
+        for img in soup.find_all("img"):
+            try:
+                local_path = next(image_iter)
+            except StopIteration:
+                break
+            if not local_path.startswith("/local_images/"):
+                continue
+            current_src = img.get("src") or ""
+            current_data_src = img.get("data-src") or ""
+            if current_src == local_path and current_data_src == local_path:
+                continue
+            img["src"] = local_path
+            img["data-src"] = local_path
+            changed = True
+
+        return str(soup) if changed else html
     
     def _is_qr_or_ad(self, src: str, img_tag) -> bool:
         """判断是否是二维码或广告图片"""

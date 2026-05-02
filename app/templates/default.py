@@ -20,8 +20,7 @@ class DefaultTemplate(BaseTemplate):
     )
     
     def get_styles(self) -> str:
-        return """
-        <style>
+        return self.build_style_block("""
         .article-wrapper {
             max-width: 800px;
             margin: 0 auto;
@@ -119,8 +118,7 @@ class DefaultTemplate(BaseTemplate):
             font-size: 14px;
             text-align: center;
         }
-        </style>
-        """
+        """)
     
     def render(self, title: str, content: str, author: str = "",
                cover_image: str = "", **kwargs) -> str:
@@ -131,6 +129,14 @@ class DefaultTemplate(BaseTemplate):
         
         # 处理作者信息
         author_html = f'<span class="article-author">{author}</span>' if author else ""
+        ad_header_html = self.render_ad_slot(
+            kwargs.get("ad_header_html", ""),
+            "article-ad-slot article-ad-slot--header"
+        )
+        ad_footer_html = self.render_ad_slot(
+            kwargs.get("ad_footer_html", ""),
+            "article-ad-slot article-ad-slot--footer"
+        )
         
         body = f"""
         <div class="article-wrapper">
@@ -142,14 +148,14 @@ class DefaultTemplate(BaseTemplate):
             </header>
             
             {cover_html}
+            {ad_header_html}
             
             <div class="article-body">
                 {content}
             </div>
             
-            <footer class="article-footer">
-                <p>本文由 AutoPlatform 自动生成</p>
-            </footer>
+            {ad_footer_html}
+            
         </div>
         """
         

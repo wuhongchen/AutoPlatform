@@ -20,8 +20,7 @@ class MinimalTemplate(BaseTemplate):
     )
     
     def get_styles(self) -> str:
-        return """
-        <style>
+        return self.build_style_block("""
         * {
             margin: 0;
             padding: 0;
@@ -29,8 +28,8 @@ class MinimalTemplate(BaseTemplate):
         }
         .article-wrapper {
             max-width: 700px;
-            margin: 60px auto;
-            padding: 0 20px;
+            margin: 28px auto;
+            padding: 0 18px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
         .article-title {
@@ -39,12 +38,12 @@ class MinimalTemplate(BaseTemplate):
             line-height: 1.3;
             color: #000;
             margin-bottom: 10px;
-            letter-spacing: -0.02em;
+            letter-spacing: 0;
         }
         .article-author {
             font-size: 14px;
             color: #666;
-            margin-bottom: 60px;
+            margin-bottom: 28px;
         }
         .article-cover {
             width: 100%;
@@ -101,8 +100,7 @@ class MinimalTemplate(BaseTemplate):
             font-size: 13px;
             color: #999;
         }
-        </style>
-        """
+        """)
     
     def render(self, title: str, content: str, author: str = "",
                cover_image: str = "", **kwargs) -> str:
@@ -110,18 +108,25 @@ class MinimalTemplate(BaseTemplate):
         
         cover_html = f'<img src="{cover_image}" class="article-cover" alt="">' if cover_image else ""
         author_html = f'<div class="article-author">{author}</div>' if author else ""
+        ad_header_html = self.render_ad_slot(
+            kwargs.get("ad_header_html", ""),
+            "article-ad-slot article-ad-slot--header"
+        )
+        ad_footer_html = self.render_ad_slot(
+            kwargs.get("ad_footer_html", ""),
+            "article-ad-slot article-ad-slot--footer"
+        )
         
         body = f"""
         <article class="article-wrapper">
             <h1 class="article-title">{title}</h1>
             {author_html}
             {cover_html}
+            {ad_header_html}
             <div class="article-body">
                 {content}
             </div>
-            <footer class="article-footer">
-                AutoPlatform
-            </footer>
+            {ad_footer_html}
         </article>
         """
         

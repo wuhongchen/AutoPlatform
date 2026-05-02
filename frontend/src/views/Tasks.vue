@@ -185,8 +185,9 @@
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useTaskStore } from '../stores'
+import { useAppStore, useTaskStore } from '../stores'
 
+const appStore = useAppStore()
 const taskStore = useTaskStore()
 
 const filters = reactive({
@@ -200,6 +201,7 @@ const autoRefreshTimer = ref(null)
 
 function loadTasks() {
   const params = {}
+  if (appStore.selectedAccountId) params.account_id = appStore.selectedAccountId
   if (filters.status) params.status = filters.status
   if (filters.name) params.name = filters.name
   taskStore.fetchTasks(params)
@@ -313,6 +315,7 @@ onUnmounted(() => {
 
 watch(() => filters.status, () => loadTasks())
 watch(() => filters.name, () => loadTasks())
+watch(() => appStore.selectedAccountId, () => loadTasks())
 </script>
 
 <style scoped>

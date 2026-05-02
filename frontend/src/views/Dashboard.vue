@@ -86,7 +86,8 @@ const quickActions = [
   { label: '采集灵感', icon: 'Plus', path: '/inspirations' },
   { label: '改写发布', icon: 'MagicStick', path: '/articles' },
   { label: '管理风格', icon: 'BrushFilled', path: '/styles' },
-  { label: '账户设置', icon: 'Setting', path: '/accounts' }
+  { label: '账户设置', icon: 'Setting', path: '/accounts' },
+  { label: '任务看板', icon: 'List', path: '/tasks' }
 ]
 
 async function loadData() {

@@ -35,7 +35,6 @@
             size="small"
             class="account-switcher"
           >
-            <el-option label="全部账户" value="" />
             <el-option
               v-for="acc in accountStore.accounts"
               :key="acc.account_id"
@@ -87,9 +86,8 @@ onMounted(async () => {
     return
   }
 
-  // 当前选择不存在时，回退到“全部账户”
-  if (appStore.selectedAccountId && !accounts.some(acc => acc.account_id === appStore.selectedAccountId)) {
-    appStore.setSelectedAccount('')
+  if (!appStore.selectedAccountId || !accounts.some(acc => acc.account_id === appStore.selectedAccountId)) {
+    appStore.setSelectedAccount(accounts[0].account_id)
   }
 })
 </script>

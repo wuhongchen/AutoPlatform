@@ -19,9 +19,13 @@ venv/
 .DS_Store
 
 # 数据文件
+data/*.db
+data/*.db-*
+data/*.bak_*
 data/db/*.db
 data/db/*.db-*
 data/db/*.bak_*
+data/output/
 output/*.html
 output/*.md
 output/*.json

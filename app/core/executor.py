@@ -43,12 +43,49 @@ class TaskExecutor:
         """设置管理器引用（懒加载，避免循环导入）"""
         self._manager = manager
         self._storage = manager.storage
+        self.recover_pending_tasks()
 
     def submit(self, task_id: str):
         """提交任务到线程池执行"""
         future = self.executor.submit(self._execute_task, task_id)
         logger.info(f"[executor] task submitted: {task_id}")
         return future
+
+    def recover_pending_tasks(self):
+        """进程启动时恢复未完成任务，避免 pending 任务永久卡住"""
+        if not self._storage:
+            return
+
+        pending_tasks = self._storage.list_tasks(status="pending", limit=1000)
+        for task in pending_tasks:
+            if task.retry_count > 0 and task.error_message and not self._should_retry(task, task.error_message):
+                self._storage.update_task(task.id, {
+                    "status": "failed",
+                    "completed_at": datetime.now(),
+                })
+                logger.info(f"[executor] pending task marked failed during recovery: {task.id}")
+                continue
+            self.submit(task.id)
+
+    def _should_retry(self, task, error_msg: str) -> bool:
+        """判断任务错误是否值得重试"""
+        if task.retry_count >= task.max_retries:
+            return False
+
+        message = (error_msg or "").lower()
+        non_retryable_markers = (
+            "authenticationerror",
+            "unauthorized",
+            "api key",
+            "missing or invalid",
+            "not found",
+            "不存在",
+            "不能为空",
+            "配置不完整",
+            "参数错误",
+            "template not found",
+        )
+        return not any(marker in message for marker in non_retryable_markers)
 
     def _run_async(self, coro):
         """在线程中运行异步协程"""
@@ -96,13 +133,14 @@ class TaskExecutor:
             logger.error(f"[executor] task failed: {task_id}: {error_msg}\n{tb}")
 
             task = self._storage.get_task(task_id)
-            if task and task.retry_count < task.max_retries:
+            if task and self._should_retry(task, error_msg):
                 # 可重试，回到 pending
                 self._storage.update_task(task_id, {
                     "status": TaskStatus.PENDING,
                     "error_message": error_msg,
                 })
                 logger.info(f"[executor] task will retry: {task_id} ({task.retry_count}/{task.max_retries})")
+                self.submit(task_id)
             else:
                 # 超过重试次数，标记失败
                 self._storage.update_task(task_id, {

@@ -62,48 +62,141 @@ class BaseTemplate(ABC):
         获取样式
         子类应该重写此方法提供模板样式
         """
+        return self.build_style_block("")
+
+    def get_shared_css(self) -> str:
+        """所有模板共享的阅读与广告位样式"""
         return """
-        <style>
-        .article-container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            line-height: 1.8;
-            color: #333;
+        * {
+            box-sizing: border-box;
         }
-        .article-title {
-            font-size: 28px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            color: #222;
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
         }
+        .article-wrapper,
+        .article-header,
+        .article-body,
+        .article-footer,
         .article-meta {
-            color: #999;
-            font-size: 14px;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
+            width: 100%;
         }
+        .article-body,
         .article-content {
-            font-size: 16px;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
-        .article-content img {
+        .article-body img,
+        .article-content img,
+        .article-cover {
+            display: block;
+            max-width: 100% !important;
+            height: auto !important;
+        }
+        .article-body table,
+        .article-content table {
+            display: block;
+            width: 100%;
             max-width: 100%;
-            height: auto;
-            border-radius: 4px;
+            overflow-x: auto;
+            border-collapse: collapse;
         }
-        .article-content h2 {
-            font-size: 22px;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            color: #222;
+        .article-ad-slot {
+            margin: 24px 0;
+            padding: 14px 16px;
+            border-radius: 12px;
+            background: #f8fafc;
+            border: 1px solid rgba(148, 163, 184, 0.24);
         }
-        .article-content p {
-            margin-bottom: 16px;
+        .article-ad-slot > :first-child {
+            margin-top: 0;
         }
-        </style>
+        .article-ad-slot > :last-child {
+            margin-bottom: 0;
+        }
+        @media (max-width: 640px) {
+            .article-wrapper {
+                max-width: 100% !important;
+                margin: 0 auto !important;
+                padding: 20px 16px !important;
+            }
+            .article-header {
+                margin-bottom: 24px !important;
+                padding-bottom: 16px !important;
+            }
+            .article-title {
+                font-size: 24px !important;
+                line-height: 1.45 !important;
+                letter-spacing: 0 !important;
+                margin-bottom: 12px !important;
+            }
+            .article-meta,
+            .article-author {
+                font-size: 13px !important;
+                line-height: 1.6 !important;
+            }
+            .article-cover {
+                margin-bottom: 24px !important;
+                border-radius: 8px !important;
+            }
+            .article-body,
+            .article-content {
+                font-size: 16px !important;
+                line-height: 1.85 !important;
+            }
+            .article-body h2,
+            .article-content h2 {
+                font-size: 20px !important;
+                line-height: 1.5 !important;
+                margin-top: 28px !important;
+                margin-bottom: 14px !important;
+            }
+            .article-body h3,
+            .article-content h3 {
+                font-size: 18px !important;
+                line-height: 1.5 !important;
+                margin-top: 22px !important;
+                margin-bottom: 12px !important;
+            }
+            .article-body p,
+            .article-content p,
+            .article-body li,
+            .article-content li {
+                margin-bottom: 16px !important;
+            }
+            .article-body blockquote,
+            .article-content blockquote {
+                margin: 20px 0 !important;
+                padding: 14px 16px !important;
+            }
+            .article-body ul,
+            .article-body ol,
+            .article-content ul,
+            .article-content ol {
+                padding-left: 22px !important;
+            }
+            .article-footer {
+                margin-top: 32px !important;
+                padding-top: 16px !important;
+            }
+            .article-ad-slot {
+                margin: 20px 0 !important;
+                padding: 12px 14px !important;
+                border-radius: 10px !important;
+            }
+        }
         """
+
+    def build_style_block(self, css: str) -> str:
+        """拼装 style 标签"""
+        return f"<style>{self.get_shared_css()}{css}</style>"
+
+    def render_ad_slot(self, slot_html: str, slot_class: str) -> str:
+        """渲染广告位片段"""
+        if not slot_html or not slot_html.strip():
+            return ""
+        return f'<section class="{slot_class}">{slot_html}</section>'
     
     def render_fragment(self, title: str, content: str, author: str = "",
                         cover_image: str = "", **kwargs) -> str:

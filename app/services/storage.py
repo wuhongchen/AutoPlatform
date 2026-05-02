@@ -11,7 +11,16 @@ from typing import Any, Dict, List, Optional, Type, TypeVar
 from contextlib import contextmanager
 
 from app.config import get_settings
-from app.models import Account, Article, PipelineRecord, InspirationRecord, StylePreset, Task, TaskStatus
+from app.models import (
+    Account,
+    Article,
+    PipelineRecord,
+    InspirationRecord,
+    StylePreset,
+    Task,
+    TaskStatus,
+    ImageAsset,
+)
 
 T = TypeVar("T")
 
@@ -52,6 +61,8 @@ class StorageService:
                     wechat_appid TEXT DEFAULT '',
                     wechat_secret TEXT DEFAULT '',
                     wechat_author TEXT DEFAULT 'W 小龙虾',
+                    ad_header_html TEXT DEFAULT '',
+                    ad_footer_html TEXT DEFAULT '',
                     pipeline_role TEXT DEFAULT 'tech_expert',
                     pipeline_model TEXT DEFAULT 'auto',
                     pipeline_batch_size INTEGER DEFAULT 3,
@@ -167,6 +178,23 @@ class StorageService:
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 图片素材表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS image_assets (
+                    id TEXT PRIMARY KEY,
+                    title TEXT DEFAULT '',
+                    prompt TEXT DEFAULT '',
+                    source_type TEXT DEFAULT 'upload',
+                    image_url TEXT NOT NULL,
+                    file_path TEXT DEFAULT '',
+                    mime_type TEXT DEFAULT '',
+                    account_id TEXT NOT NULL,
+                    metadata TEXT DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.execute("PRAGMA journal_mode=WAL;")
             
             # 风格预设表
@@ -189,6 +217,20 @@ class StorageService:
                 )
             """)
             self._ensure_articles_schema(conn)
+            self._ensure_accounts_schema(conn)
+
+    def _ensure_accounts_schema(self, conn: sqlite3.Connection):
+        """向后兼容：为历史数据库补齐账户字段"""
+        rows = conn.execute("PRAGMA table_info(accounts)").fetchall()
+        existing_columns = {row["name"] for row in rows}
+        required_columns = {
+            "wechat_author": "TEXT DEFAULT 'W 小龙虾'",
+            "ad_header_html": "TEXT DEFAULT ''",
+            "ad_footer_html": "TEXT DEFAULT ''",
+        }
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(f"ALTER TABLE accounts ADD COLUMN {column_name} {column_type}")
 
     def _ensure_articles_schema(self, conn: sqlite3.Connection):
         """向后兼容：为历史数据库补齐新版本文章字段"""
@@ -224,10 +266,11 @@ class StorageService:
             conn.execute(
                 """
                 INSERT INTO accounts (id, name, account_id, status, wechat_appid, 
-                    wechat_secret, wechat_author, pipeline_role, pipeline_model,
+                    wechat_secret, wechat_author, ad_header_html, ad_footer_html,
+                    pipeline_role, pipeline_model,
                     pipeline_batch_size, content_direction, prompt_direction,
                     wechat_prompt_direction, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     account.id or account.account_id,
@@ -237,6 +280,8 @@ class StorageService:
                     account.wechat_appid,
                     account.wechat_secret,
                     account.wechat_author,
+                    account.ad_header_html,
+                    account.ad_footer_html,
                     account.pipeline_role,
                     account.pipeline_model,
                     account.pipeline_batch_size,
@@ -304,9 +349,12 @@ class StorageService:
             conn.execute(
                 """
                 INSERT INTO articles (id, source_url, source_title, source_author,
-                    original_content, original_html, images, status, ai_score,
-                    ai_reason, ai_direction, account_id, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    original_content, original_html, rewritten_content, rewritten_html,
+                    images, cover_image, status, ai_score, ai_reason, ai_direction,
+                    rewrite_style, rewrite_references, custom_instructions,
+                    wechat_draft_id, published_at, published_url, account_id,
+                    pipeline_id, metadata, error_message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     article.id,
@@ -315,13 +363,24 @@ class StorageService:
                     article.source_author,
                     article.original_content,
                     article.original_html,
+                    article.rewritten_content,
+                    article.rewritten_html,
                     json.dumps(article.images),
+                    article.cover_image,
                     article.status.value,
                     article.ai_score,
                     article.ai_reason,
                     article.ai_direction,
+                    article.rewrite_style,
+                    json.dumps(article.rewrite_references),
+                    article.custom_instructions,
+                    article.wechat_draft_id,
+                    article.published_at.isoformat() if article.published_at else None,
+                    article.published_url,
                     article.account_id,
+                    article.pipeline_id,
                     json.dumps(article.metadata),
+                    article.error_message,
                 )
             )
         return article
@@ -381,6 +440,62 @@ class StorageService:
             cursor = conn.execute(
                 f"UPDATE articles SET {fields} WHERE id = ?",
                 values
+            )
+            return cursor.rowcount > 0
+
+    # 图片素材操作
+    def create_image_asset(self, asset: ImageAsset) -> ImageAsset:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO image_assets (
+                    id, title, prompt, source_type, image_url, file_path,
+                    mime_type, account_id, metadata
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    asset.id,
+                    asset.title,
+                    asset.prompt,
+                    asset.source_type.value if hasattr(asset.source_type, "value") else asset.source_type,
+                    asset.image_url,
+                    asset.file_path,
+                    asset.mime_type,
+                    asset.account_id,
+                    json.dumps(asset.metadata),
+                ),
+            )
+        return asset
+
+    def get_image_asset(self, asset_id: str) -> Optional[ImageAsset]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM image_assets WHERE id = ?",
+                (asset_id,),
+            ).fetchone()
+            if row:
+                return ImageAsset.model_validate(self._row_to_dict(row))
+            return None
+
+    def list_image_assets(self, account_id: Optional[str] = None, limit: int = 100) -> List[ImageAsset]:
+        query = "SELECT * FROM image_assets WHERE 1=1"
+        params = []
+        if account_id:
+            query += " AND account_id = ?"
+            params.append(account_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [ImageAsset.model_validate(self._row_to_dict(row)) for row in rows]
+
+    def delete_image_asset(self, asset_id: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM image_assets WHERE id = ?",
+                (asset_id,),
             )
             return cursor.rowcount > 0
     
@@ -535,8 +650,19 @@ class StorageService:
     # 统计信息
     def get_stats(self, account_id: Optional[str] = None) -> Dict[str, Any]:
         """获取统计数据"""
+        article_statuses = [
+            "pending", "rewriting", "rewritten",
+            "publishing", "published", "failed",
+        ]
+        task_statuses = ["pending", "running", "completed", "failed", "cancelled"]
+        inspiration_statuses = ["待采集", "已采集"]
+
         with self._get_connection() as conn:
-            stats = {}
+            stats = {
+                "articles": {status: 0 for status in article_statuses},
+                "tasks": {status: 0 for status in task_statuses},
+                "inspiration": {status: 0 for status in inspiration_statuses},
+            }
             
             # 文章统计
             query = "SELECT status, COUNT(*) as count FROM articles"
@@ -547,7 +673,8 @@ class StorageService:
             query += " GROUP BY status"
             
             rows = conn.execute(query, params).fetchall()
-            stats["articles"] = {row["status"]: row["count"] for row in rows}
+            for row in rows:
+                stats["articles"][row["status"]] = row["count"]
             
             # 任务统计
             query = "SELECT status, COUNT(*) as count FROM tasks"
@@ -558,7 +685,8 @@ class StorageService:
             query += " GROUP BY status"
             
             rows = conn.execute(query, params).fetchall()
-            stats["tasks"] = {row["status"]: row["count"] for row in rows}
+            for row in rows:
+                stats["tasks"][row["status"]] = row["count"]
             
             # 灵感库统计
             query = "SELECT status, COUNT(*) as count FROM inspiration_records"
@@ -569,7 +697,8 @@ class StorageService:
             query += " GROUP BY status"
             
             rows = conn.execute(query, params).fetchall()
-            stats["inspiration"] = {row["status"]: row["count"] for row in rows}
+            for row in rows:
+                stats["inspiration"][row["status"]] = row["count"]
             
             return stats
 

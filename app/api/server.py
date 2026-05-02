@@ -3,7 +3,7 @@ API服务
 """
 import os
 import time
-from flask import Flask, jsonify, request, send_from_directory, redirect
+from flask import Flask, jsonify, request, send_file, send_from_directory, redirect
 from werkzeug.exceptions import HTTPException
 from app.core import AppManager
 from app.core.logger import get_logger
@@ -58,12 +58,17 @@ def list_accounts():
 
 @app.route("/api/accounts", methods=["POST"])
 def create_account():
-    data = request.json
+    data = request.json or {}
     account = manager.create_account(
         name=data["name"],
         account_id=data["account_id"],
         wechat_appid=data.get("wechat_appid", ""),
-        wechat_secret=data.get("wechat_secret", "")
+        wechat_secret=data.get("wechat_secret", ""),
+        wechat_author=data.get("wechat_author", ""),
+        ad_header_html=data.get("ad_header_html", ""),
+        ad_footer_html=data.get("ad_footer_html", ""),
+        pipeline_role=data.get("pipeline_role", "tech_expert"),
+        pipeline_batch_size=data.get("pipeline_batch_size", 3),
     )
     return jsonify(account.model_dump())
 
@@ -119,6 +124,9 @@ def collect_inspiration():
 @app.route("/api/inspirations", methods=["GET"])
 def list_inspirations():
     account_id = request.args.get("account_id")
+    merge_wechat_cache = request.args.get("merge_wechat_cache", "").lower() in {"1", "true", "yes", "on"}
+    if account_id and merge_wechat_cache:
+        manager.merge_wechat_cached_articles_into_inspirations(account_id=account_id)
     records = manager.storage.list_inspirations(account_id=account_id)
     return jsonify([r.model_dump() for r in records])
 
@@ -136,20 +144,234 @@ def delete_inspiration(record_id):
         return jsonify({"error": "Delete failed or inspiration not found"}), 400
     return jsonify({"success": True})
 
-@app.route("/api/inspirations/<record_id>/approve", methods=["POST"])
-def approve_inspiration(record_id):
-    """采纳灵感并创建文章"""
+
+@app.route("/api/wechat-ingest/status", methods=["GET"])
+def wechat_ingest_status():
+    account_id = request.args.get("account_id", "")
     try:
-        article = manager.approve_inspiration(record_id)
+        return jsonify(manager.wechat_ingest_status(account_id))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/qr-image", methods=["GET"])
+def wechat_ingest_qr_image():
+    account_id = request.args.get("account_id", "")
+    try:
+        status = manager.wechat_ingest_status(account_id)
+        qr_path = (
+            status.get("state", {}).get("qr_image_path")
+            or status.get("qr_image_path")
+            or ""
+        )
+        if not qr_path or not os.path.isfile(qr_path):
+            return jsonify({"error": "QR image not found"}), 404
+        return send_file(qr_path, mimetype="image/png")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/mps", methods=["GET"])
+def wechat_ingest_list_mps():
+    account_id = request.args.get("account_id", "")
+    try:
+        return jsonify(manager.wechat_ingest_list_mps(account_id))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/articles", methods=["GET"])
+def wechat_ingest_list_articles():
+    account_id = request.args.get("account_id", "")
+    mp_id = request.args.get("mp_id", "")
+    limit = request.args.get("limit", 50, type=int)
+    try:
+        return jsonify(manager.wechat_ingest_list_articles(account_id, mp_id=mp_id, limit=limit))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/article-preview", methods=["GET"])
+def wechat_ingest_article_preview():
+    account_id = request.args.get("account_id", "")
+    mp_id = request.args.get("mp_id", "")
+    article_id = request.args.get("article_id", "")
+    try:
+        return jsonify(manager.wechat_ingest_article_preview(account_id, mp_id=mp_id, article_id=article_id))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/login", methods=["POST"])
+def wechat_ingest_login():
+    data = request.json or {}
+    try:
+        return jsonify(
+            manager.wechat_ingest_login(
+                data.get("account_id", ""),
+                wait=bool(data.get("wait", False)),
+                qr_display=data.get("qr_display", "none"),
+                timeout=int(data.get("timeout", 60)),
+                token_wait_timeout=int(data.get("token_wait_timeout", 20)),
+                thread_join_timeout=int(data.get("thread_join_timeout", 8)),
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/search-mp", methods=["POST"])
+def wechat_ingest_search_mp():
+    data = request.json or {}
+    try:
+        return jsonify(
+            manager.wechat_ingest_search_mp(
+                data.get("account_id", ""),
+                keyword=data.get("keyword", ""),
+                limit=int(data.get("limit", 10)),
+                offset=int(data.get("offset", 0)),
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/add-mp", methods=["POST"])
+def wechat_ingest_add_mp():
+    data = request.json or {}
+    try:
+        return jsonify(
+            manager.wechat_ingest_add_mp(
+                data.get("account_id", ""),
+                keyword=data.get("keyword", ""),
+                pick=int(data.get("pick", 1)),
+                limit=int(data.get("limit", 10)),
+                offset=int(data.get("offset", 0)),
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/pull-articles", methods=["POST"])
+def wechat_ingest_pull_articles():
+    data = request.json or {}
+    try:
+        return jsonify(
+            manager.wechat_ingest_pull_articles(
+                data.get("account_id", ""),
+                mp_id=data.get("mp_id", ""),
+                pages=int(data.get("pages", 1)),
+                mode=data.get("mode", "api"),
+                with_content=bool(data.get("with_content", False)),
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/sync-inspirations", methods=["POST"])
+def wechat_ingest_sync_inspirations():
+    data = request.json or {}
+    try:
+        return jsonify(
+            manager.wechat_ingest_sync_inspirations(
+                data.get("account_id", ""),
+                mp_id=data.get("mp_id", ""),
+                limit=int(data.get("limit", 20)),
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/wechat-ingest/full-flow", methods=["POST"])
+def wechat_ingest_full_flow():
+    data = request.json or {}
+    try:
+        return jsonify(
+            manager.wechat_ingest_full_flow(
+                data.get("account_id", ""),
+                mp_id=data.get("mp_id", ""),
+                keyword=data.get("keyword", ""),
+                pick=int(data.get("pick", 1)),
+                pages=int(data.get("pages", 1)),
+                mode=data.get("mode", "api"),
+                with_content=bool(data.get("with_content", False)),
+                content_limit=int(data.get("content_limit", 10)),
+                sync_limit=int(data.get("sync_limit", 20)),
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/inspirations/<record_id>/create-article", methods=["POST"])
+@app.route("/api/inspirations/<record_id>/approve", methods=["POST"])
+def create_article_from_inspiration(record_id):
+    """从素材创建文章"""
+    try:
+        article = manager.create_article_from_inspiration(record_id)
         return jsonify(article.model_dump())
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
+@app.route("/api/image-assets", methods=["GET"])
+def list_image_assets():
+    account_id = request.args.get("account_id")
+    assets = manager.list_image_assets(account_id=account_id)
+    return jsonify([asset.model_dump() for asset in assets])
+
+
+@app.route("/api/image-assets/upload", methods=["POST"])
+def upload_image_asset():
+    try:
+        image_file = request.files.get("file")
+        account_id = request.form.get("account_id", "")
+        title = request.form.get("title", "")
+        asset = manager.upload_image_asset(image_file, account_id=account_id, title=title)
+        return jsonify(asset.model_dump()), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/image-assets/generate", methods=["POST"])
+def generate_image_asset():
+    data = request.json or {}
+    try:
+        asset = manager.generate_image_asset(
+            prompt=data.get("prompt", ""),
+            account_id=data.get("account_id", ""),
+            title=data.get("title", ""),
+            size=data.get("size", ""),
+        )
+        return jsonify(asset.model_dump()), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/image-assets/<asset_id>", methods=["DELETE"])
+def delete_image_asset(asset_id):
+    success = manager.delete_image_asset(asset_id)
+    if not success:
+        return jsonify({"error": "Image asset not found"}), 404
+    return jsonify({"success": True})
+
 @app.route("/api/articles", methods=["GET"])
 def list_articles():
     account_id = request.args.get("account_id")
-    articles = manager.storage.list_articles(account_id=account_id)
+    status = request.args.get("status")
+    articles = manager.storage.list_articles(account_id=account_id, status=status)
     return jsonify([a.model_dump() for a in articles])
+
+@app.route("/api/articles", methods=["POST"])
+def create_article():
+    data = request.json or {}
+    try:
+        article = manager.create_manual_article(data)
+        return jsonify(article.model_dump()), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route("/api/articles/<article_id>", methods=["GET"])
 def get_article(article_id):
@@ -158,6 +380,15 @@ def get_article(article_id):
     if not article:
         return jsonify({"error": "Article not found"}), 404
     return jsonify(article.model_dump())
+
+@app.route("/api/articles/<article_id>", methods=["PUT"])
+def update_article(article_id):
+    data = request.json or {}
+    try:
+        article = manager.update_article_content(article_id, data)
+        return jsonify(article.model_dump())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route("/api/articles/<article_id>/rewrite", methods=["POST"])
 def rewrite_article(article_id):
@@ -270,12 +501,22 @@ def preview_template(template_name):
     title = data.get("title", "示例标题")
     content = data.get("content", "<p>这是一段示例内容</p>")
     author = data.get("author", "作者")
+    cover_image = data.get("cover_image", "")
+    ad_header_html = data.get("ad_header_html", "")
+    ad_footer_html = data.get("ad_footer_html", "")
     
     template = TemplateRegistry.create_instance(template_name)
     if not template:
         return jsonify({"error": "Template not found"}), 404
     
-    html = template.render(title=title, content=content, author=author)
+    html = template.render(
+        title=title,
+        content=content,
+        author=author,
+        cover_image=cover_image,
+        ad_header_html=ad_header_html,
+        ad_footer_html=ad_footer_html,
+    )
     return jsonify({"html": html})
 
 @app.route("/api/tasks", methods=["POST"])

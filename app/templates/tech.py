@@ -20,8 +20,7 @@ class TechTemplate(BaseTemplate):
     )
     
     def get_styles(self) -> str:
-        return """
-        <style>
+        return self.build_style_block("""
         .article-wrapper {
             max-width: 800px;
             margin: 0 auto;
@@ -50,7 +49,7 @@ class TechTemplate(BaseTemplate):
         .article-author {
             color: #8892b0;
             font-size: 14px;
-            letter-spacing: 1px;
+            letter-spacing: 0;
             text-transform: uppercase;
         }
         .article-cover {
@@ -147,8 +146,7 @@ class TechTemplate(BaseTemplate):
             padding: 2px 6px;
             border-radius: 4px;
         }
-        </style>
-        """
+        """)
     
     def render(self, title: str, content: str, author: str = "",
                cover_image: str = "", **kwargs) -> str:
@@ -156,6 +154,14 @@ class TechTemplate(BaseTemplate):
         
         cover_html = f'<img src="{cover_image}" class="article-cover" alt="封面">' if cover_image else ""
         author_html = f'<div class="article-author">{author}</div>' if author else ""
+        ad_header_html = self.render_ad_slot(
+            kwargs.get("ad_header_html", ""),
+            "article-ad-slot article-ad-slot--header"
+        )
+        ad_footer_html = self.render_ad_slot(
+            kwargs.get("ad_footer_html", ""),
+            "article-ad-slot article-ad-slot--footer"
+        )
         
         body = f"""
         <div class="article-wrapper">
@@ -165,14 +171,14 @@ class TechTemplate(BaseTemplate):
             </header>
             
             {cover_html}
+            {ad_header_html}
             
             <div class="article-body">
                 {content}
             </div>
             
-            <footer class="article-footer">
-                <p>Powered by AutoPlatform</p>
-            </footer>
+            {ad_footer_html}
+            
         </div>
         """
         

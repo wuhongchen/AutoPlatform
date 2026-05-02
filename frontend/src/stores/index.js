@@ -31,11 +31,21 @@ export const useAccountStore = defineStore('accounts', () => {
   async function createAccount(data) {
     return await api.accounts.create(data)
   }
+
+  async function updateAccount(id, data) {
+    return await api.accounts.update(id, data)
+  }
+
+  async function deleteAccount(id) {
+    return await api.accounts.delete(id)
+  }
   
   return {
     accounts,
     fetchAccounts,
-    createAccount
+    createAccount,
+    updateAccount,
+    deleteAccount
   }
 })
 
@@ -43,7 +53,7 @@ export const useAccountStore = defineStore('accounts', () => {
 export const useAppStore = defineStore('app', () => {
   const stats = ref({
     articles: {},
-    pipeline: {},
+    tasks: {},
     inspiration: {}
   })
 
@@ -126,12 +136,20 @@ export const useStyleStore = defineStore('styles', () => {
   }
 })
 
-// 灵感库状态
+// 素材库状态
 export const useInspirationStore = defineStore('inspirations', () => {
   const inspirations = ref([])
+
+  async function getInspiration(id) {
+    return await api.inspirations.get(id)
+  }
   
   async function fetchInspirations(params) {
-    const data = await api.inspirations.list(params)
+    const mergedParams = {
+      ...(params || {}),
+      merge_wechat_cache: true
+    }
+    const data = await api.inspirations.list(mergedParams)
     inspirations.value = data
     return data
   }
@@ -140,8 +158,8 @@ export const useInspirationStore = defineStore('inspirations', () => {
     return await api.inspirations.collect({ url, account_id: accountId })
   }
   
-  async function approve(id) {
-    return await api.inspirations.approve(id)
+  async function createArticle(id) {
+    return await api.inspirations.createArticle(id)
   }
 
   async function deleteInspiration(id) {
@@ -150,10 +168,46 @@ export const useInspirationStore = defineStore('inspirations', () => {
 
   return {
     inspirations,
+    getInspiration,
     fetchInspirations,
     collect,
-    approve,
+    createArticle,
     deleteInspiration
+  }
+})
+
+// 图片素材库状态
+export const useImageAssetStore = defineStore('image-assets', () => {
+  const imageAssets = ref([])
+
+  async function fetchImageAssets(params) {
+    const data = await api.imageAssets.list(params)
+    imageAssets.value = data
+    return data
+  }
+
+  async function uploadImageAsset({ file, account_id, title }) {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('account_id', account_id)
+    formData.append('title', title || '')
+    return await api.imageAssets.upload(formData)
+  }
+
+  async function generateImageAsset(data) {
+    return await api.imageAssets.generate(data)
+  }
+
+  async function deleteImageAsset(id) {
+    return await api.imageAssets.delete(id)
+  }
+
+  return {
+    imageAssets,
+    fetchImageAssets,
+    uploadImageAsset,
+    generateImageAsset,
+    deleteImageAsset
   }
 })
 
@@ -173,6 +227,19 @@ export const useArticleStore = defineStore('articles', () => {
     currentArticle.value = data
     return data
   }
+
+  async function createArticle(data) {
+    const result = await api.articles.create(data)
+    return result
+  }
+
+  async function updateArticle(id, data) {
+    const result = await api.articles.update(id, data)
+    if (currentArticle.value?.id === id) {
+      currentArticle.value = result
+    }
+    return result
+  }
   
   async function rewrite(id, data) {
     return await api.articles.rewrite(id, data)
@@ -187,6 +254,8 @@ export const useArticleStore = defineStore('articles', () => {
     currentArticle,
     fetchArticles,
     getArticle,
+    createArticle,
+    updateArticle,
     rewrite,
     publish
   }
@@ -203,6 +272,11 @@ export const useTaskStore = defineStore('tasks', () => {
     try {
       const data = await api.tasks.list(params)
       tasks.value = data
+      const stats = { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 }
+      data.forEach((task) => {
+        stats[task.status] = (stats[task.status] || 0) + 1
+      })
+      taskStats.value = stats
       return data
     } finally {
       loading.value = false

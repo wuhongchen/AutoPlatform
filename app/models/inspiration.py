@@ -1,5 +1,5 @@
 """
-灵感库模型
+素材库模型
 """
 
 from datetime import datetime
@@ -10,17 +10,13 @@ from .base import BaseDBModel
 
 
 class InspirationStatus(str, Enum):
-    """灵感状态"""
-    PENDING_ANALYSIS = "待分析"
-    ANALYZING = "分析中"
-    PENDING_DECISION = "待决策"
-    APPROVED = "已采纳"
-    REJECTED = "已跳过"
-    IN_PIPELINE = "已进入流水线"
+    """素材状态"""
+    PENDING = "待采集"      # 采集任务执行中
+    COLLECTED = "已采集"    # 采集完成
 
 
 class InspirationRecord(BaseDBModel):
-    """灵感记录"""
+    """素材记录"""
     
     # 来源
     source_url: str = Field(description="来源URL")
@@ -41,14 +37,14 @@ class InspirationRecord(BaseDBModel):
     read_count: Optional[int] = Field(default=None, description="阅读量")
     like_count: Optional[int] = Field(default=None, description="点赞数")
     
-    # AI分析
+    # AI分析（保留字段，但不再影响状态）
     ai_score: Optional[float] = Field(default=None, description="AI评分 0-100")
     ai_reason: str = Field(default="", description="推荐理由")
     ai_direction: str = Field(default="", description="建议方向")
     ai_insight: str = Field(default="", description="核心洞察")
     
     # 状态
-    status: InspirationStatus = Field(default=InspirationStatus.PENDING_ANALYSIS, description="状态")
+    status: InspirationStatus = Field(default=InspirationStatus.PENDING, description="状态")
     
     # 关联
     account_id: str = Field(description="所属账户ID")

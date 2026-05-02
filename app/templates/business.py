@@ -20,35 +20,34 @@ class BusinessTemplate(BaseTemplate):
     )
     
     def get_styles(self) -> str:
-        return """
-        <style>
+        return self.build_style_block("""
         .article-wrapper {
             max-width: 800px;
             margin: 0 auto;
-            padding: 40px 30px;
+            padding: 28px 22px 36px;
             background: #fff;
             font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
             color: #2c3e50;
         }
         .article-header {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            margin: -40px -30px 40px -30px;
-            padding: 50px 30px;
-            color: #fff;
+            margin-bottom: 28px;
+            padding: 0 0 18px;
+            color: #1e293b;
+            border-bottom: 1px solid #dbe4f0;
         }
         .article-title {
-            font-size: 30px;
-            font-weight: 300;
-            line-height: 1.3;
-            margin-bottom: 16px;
-            letter-spacing: -0.5px;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1.4;
+            margin-bottom: 12px;
+            letter-spacing: 0;
         }
         .article-meta {
             font-size: 13px;
-            opacity: 0.8;
+            color: #64748b;
         }
         .article-author {
-            font-weight: 500;
+            font-weight: 600;
         }
         .article-cover {
             width: 100%;
@@ -162,8 +161,7 @@ class BusinessTemplate(BaseTemplate):
             color: #2c3e50;
             margin-bottom: 10px;
         }
-        </style>
-        """
+        """)
     
     def render(self, title: str, content: str, author: str = "",
                cover_image: str = "", **kwargs) -> str:
@@ -171,6 +169,14 @@ class BusinessTemplate(BaseTemplate):
         
         cover_html = f'<img src="{cover_image}" class="article-cover" alt="封面">' if cover_image else ""
         author_html = f'<span class="article-author">{author}</span>' if author else ""
+        ad_header_html = self.render_ad_slot(
+            kwargs.get("ad_header_html", ""),
+            "article-ad-slot article-ad-slot--header"
+        )
+        ad_footer_html = self.render_ad_slot(
+            kwargs.get("ad_footer_html", ""),
+            "article-ad-slot article-ad-slot--footer"
+        )
         
         body = f"""
         <div class="article-wrapper">
@@ -182,14 +188,14 @@ class BusinessTemplate(BaseTemplate):
             </header>
             
             {cover_html}
+            {ad_header_html}
             
             <div class="article-body">
                 {content}
             </div>
             
-            <footer class="article-footer">
-                <p>本内容仅供参考，转载请注明出处</p>
-            </footer>
+            {ad_footer_html}
+            
         </div>
         """
         

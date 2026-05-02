@@ -13,6 +13,29 @@
           
           <div v-if="!articleId" class="empty-state">
             <el-empty description="请选择要改写的文章">
+              <div class="empty-selector">
+                <el-select
+                  v-model="selectedArticleId"
+                  placeholder="选择一篇文章"
+                  filterable
+                  style="width: 320px"
+                >
+                  <el-option
+                    v-for="item in availableArticles"
+                    :key="item.id"
+                    :label="item.source_title || '无标题'"
+                    :value="item.id"
+                  >
+                    <div class="article-option">
+                      <span>{{ item.source_title || '无标题' }}</span>
+                      <span class="article-option-status">{{ item.status }}</span>
+                    </div>
+                  </el-option>
+                </el-select>
+                <el-button type="primary" :disabled="!selectedArticleId" @click="openSelectedArticle">
+                  加载文章
+                </el-button>
+              </div>
               <el-button type="primary" @click="$router.push('/articles')">
                 去文章列表
               </el-button>
@@ -233,6 +256,7 @@ const config = ref({
   rewrite_mode: 'manual'
 })
 
+const selectedArticleId = ref('')
 const inspirationSearch = ref('')
 const selectedInspirations = ref([])
 const rewriting = ref(false)
@@ -278,8 +302,12 @@ const filteredInspirations = computed(() => {
 })
 
 const isMaxSelected = computed(() => selectedInspirations.value.length >= 5)
+const availableArticles = computed(() => {
+  return articleStore.articles.filter(item => item.status !== 'publishing')
+})
 
 async function loadData() {
+  await loadArticles()
   if (articleId.value) {
     try {
       await articleStore.getArticle(articleId.value)
@@ -296,10 +324,27 @@ async function loadData() {
   }
 }
 
+async function loadArticles() {
+  const accountId = appStore.selectedAccountId || article.value?.account_id || ''
+  const params = accountId ? { account_id: accountId } : undefined
+  await articleStore.fetchArticles(params)
+  const hasSelected = articleStore.articles.some(item => item.id === selectedArticleId.value)
+  if ((!selectedArticleId.value || !hasSelected) && articleStore.articles.length > 0) {
+    selectedArticleId.value = articleStore.articles[0].id
+  } else if (!articleStore.articles.length) {
+    selectedArticleId.value = ''
+  }
+}
+
 async function loadInspirations() {
   const accountId = appStore.selectedAccountId || article.value?.account_id || ''
   const params = accountId ? { account_id: accountId } : undefined
   await inspirationStore.fetchInspirations(params)
+}
+
+function openSelectedArticle() {
+  if (!selectedArticleId.value) return
+  router.push({ name: 'Rewrite', query: { id: selectedArticleId.value } })
 }
 
 async function startRewrite() {
@@ -415,6 +460,7 @@ watch(() => route.query.id, (newId, oldId) => {
 })
 
 watch(() => appStore.selectedAccountId, () => {
+  loadArticles()
   loadInspirations()
 })
 </script>
@@ -432,6 +478,25 @@ watch(() => appStore.selectedAccountId, () => {
 
 .empty-state {
   padding: 60px 0;
+}
+
+.empty-selector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.article-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.article-option-status {
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .article-info {

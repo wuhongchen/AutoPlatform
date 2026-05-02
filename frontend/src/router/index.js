@@ -23,7 +23,13 @@ const routes = [
         path: 'articles',
         name: 'Articles',
         component: () => import('../views/Articles.vue'),
-        meta: { title: '文章管理', icon: 'Document' }
+        meta: { title: '我的文章', icon: 'Document' }
+      },
+      {
+        path: 'records',
+        name: 'Records',
+        component: () => import('../views/Records.vue'),
+        meta: { title: 'AI记录', icon: 'List' }
       },
       {
         path: 'rewrite',
@@ -35,7 +41,7 @@ const routes = [
         path: 'inspirations',
         name: 'Inspirations',
         component: () => import('../views/Inspirations.vue'),
-        meta: { title: '灵感库', icon: 'Collection' }
+        meta: { title: '素材库', icon: 'Collection' }
       },
       {
         path: 'styles',

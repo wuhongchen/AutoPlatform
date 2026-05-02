@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Optional, List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+
+load_dotenv(".env", override=False)
 
 
 class DatabaseConfig(BaseSettings):
@@ -35,7 +39,7 @@ class AIConfig(BaseSettings):
     api_key: str = Field(default="", description="API密钥")
     endpoint: str = Field(default="https://ark.cn-beijing.volces.com/api/v3", description="API端点")
     model: str = Field(default="doubao-seed-2-0-pro-260215", description="模型ID")
-    timeout: int = Field(default=60, description="请求超时")
+    timeout: int = Field(default=240, description="请求超时")
 
 
 class ImageConfig(BaseSettings):
