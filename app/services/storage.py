@@ -234,6 +234,24 @@ class StorageService:
                 )
             """)
 
+            # RSS 信息源表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS feed_sources (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL DEFAULT '',
+                    url TEXT NOT NULL DEFAULT '',
+                    account_id TEXT DEFAULT '',
+                    category TEXT DEFAULT '未分类',
+                    fetch_interval INTEGER DEFAULT 60,
+                    last_fetched_at TEXT,
+                    item_count INTEGER DEFAULT 0,
+                    is_active INTEGER DEFAULT 1,
+                    metadata TEXT DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             self._ensure_articles_schema(conn)
             self._ensure_accounts_schema(conn)
 
@@ -1082,3 +1100,106 @@ class StorageService:
                 **preset,
                 "api_key": api_key,
             })
+
+    # ─── RSS 信息源 CRUD ───────────────────────────────────────────
+
+    def list_feed_sources(self, account_id: Optional[str] = None) -> List[Dict]:
+        """列出所有信息源"""
+        with self._get_connection() as conn:
+            if account_id:
+                rows = conn.execute(
+                    "SELECT * FROM feed_sources WHERE account_id = ? ORDER BY created_at DESC",
+                    (account_id,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM feed_sources ORDER BY created_at DESC"
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_feed_source(self, feed_id: str) -> Optional[Dict]:
+        """获取单个信息源"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM feed_sources WHERE id = ?", (feed_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def create_feed_source(self, data: Dict) -> Dict:
+        """创建信息源"""
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO feed_sources (id, name, url, account_id, category,
+                   fetch_interval, last_fetched_at, item_count, is_active, metadata,
+                   created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (
+                    data["id"],
+                    data.get("name", ""),
+                    data.get("url", ""),
+                    data.get("account_id", ""),
+                    data.get("category", "未分类"),
+                    int(data.get("fetch_interval", 60)),
+                    data.get("last_fetched_at"),
+                    int(data.get("item_count", 0)),
+                    int(data.get("is_active", True)),
+                    json.dumps(data.get("metadata", {})),
+                ),
+            )
+            return self.get_feed_source(data["id"])
+
+    def update_feed_source(self, feed_id: str, data: Dict) -> bool:
+        """更新信息源"""
+        updates = []
+        params = []
+        for key in ["name", "url", "account_id", "category", "last_fetched_at"]:
+            if key in data:
+                updates.append(f"{key} = ?")
+                params.append(data[key])
+        for key in ["fetch_interval", "item_count", "is_active"]:
+            if key in data:
+                updates.append(f"{key} = ?")
+                params.append(int(data[key]))
+        if "metadata" in data:
+            updates.append("metadata = ?")
+            params.append(json.dumps(data["metadata"]))
+        if not updates:
+            return False
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(feed_id)
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE feed_sources SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            return cursor.rowcount > 0
+
+    def delete_feed_source(self, feed_id: str) -> bool:
+        """删除信息源"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM feed_sources WHERE id = ?", (feed_id,)
+            )
+            return cursor.rowcount > 0
+
+    def toggle_feed_source(self, feed_id: str) -> bool:
+        """启用/禁用信息源"""
+        with self._get_connection() as conn:
+            feed = self.get_feed_source(feed_id)
+            if not feed:
+                return False
+            new_active = 0 if feed.get("is_active") else 1
+            conn.execute(
+                "UPDATE feed_sources SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (new_active, feed_id),
+            )
+            return True
+
+    def find_inspiration_by_url(self, url: str) -> Optional[Dict]:
+        """按 URL 查找已有灵感记录（去重用）"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM inspiration_records WHERE source_url = ? LIMIT 1",
+                (url,)
+            ).fetchone()
+            return dict(row) if row else None

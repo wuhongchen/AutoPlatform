@@ -11,6 +11,7 @@ from .inspiration import InspirationRecord, InspirationStatus
 from .style_preset import StylePreset, WritingTone, WritingStyle
 from .image_asset import ImageAsset, ImageAssetSource
 from .ai_config import AIModelConfig, BUILTIN_AI_CONFIGS
+from .feed_source import FeedSource
 
 __all__ = [
     "Account",
@@ -28,6 +29,7 @@ __all__ = [
     "ImageAssetSource",
     "AIModelConfig",
     "BUILTIN_AI_CONFIGS",
+    "FeedSource",
     "Task",
     "TaskStatus",
     "TaskName",

@@ -710,6 +710,63 @@ def test_ai_config(config_id):
         return jsonify({"success": False, "error": str(e)})
 
 
+
+# ============ RSS 信息源管理 ============
+
+@app.route("/api/feeds", methods=["GET"])
+def list_feeds():
+    account_id = request.args.get("account_id")
+    feeds = manager.list_feed_sources(account_id=account_id if account_id else None)
+    return jsonify(feeds)
+
+@app.route("/api/feeds", methods=["POST"])
+def create_feed():
+    data = request.json or {}
+    if not data.get("url"):
+        return jsonify({"error": "RSS 地址不能为空"}), 400
+    try:
+        feed = manager.create_feed_source(data)
+        return jsonify(feed), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/feeds/<feed_id>", methods=["GET"])
+def get_feed(feed_id):
+    feed = manager.get_feed_source(feed_id)
+    if not feed:
+        return jsonify({"error": "信息源不存在"}), 404
+    return jsonify(feed)
+
+@app.route("/api/feeds/<feed_id>", methods=["PUT"])
+def update_feed(feed_id):
+    data = request.json or {}
+    success = manager.update_feed_source(feed_id, data)
+    if not success:
+        return jsonify({"error": "更新失败"}), 400
+    return jsonify({"success": True})
+
+@app.route("/api/feeds/<feed_id>", methods=["DELETE"])
+def delete_feed(feed_id):
+    success = manager.delete_feed_source(feed_id)
+    if not success:
+        return jsonify({"error": "删除失败"}), 400
+    return jsonify({"success": True})
+
+@app.route("/api/feeds/<feed_id>/fetch", methods=["POST"])
+def fetch_feed(feed_id):
+    try:
+        result = manager.fetch_feed(feed_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/feeds/<feed_id>/toggle", methods=["POST"])
+def toggle_feed(feed_id):
+    success = manager.toggle_feed_source(feed_id)
+    if not success:
+        return jsonify({"error": "操作失败"}), 400
+    return jsonify({"success": True})
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})

@@ -88,7 +88,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   HomeFilled, UserFilled, Document, MagicStick,
-  Collection, BrushFilled, List, Link, Cpu
+  Collection, BrushFilled, List, Link, Cpu, Connection
 } from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 
@@ -98,7 +98,7 @@ const appStore = useAppStore()
 
 const iconMap = {
   HomeFilled, UserFilled, Document, MagicStick,
-  Collection, BrushFilled, List, Link, Cpu
+  Collection, BrushFilled, List, Link, Cpu, Connection
 }
 
 const menuRoutes = computed(() => {

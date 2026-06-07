@@ -137,6 +137,17 @@ export default {
     run: (data) => api.post('/content-flow/run', data)
   },
 
+  // RSS 信息源
+  feeds: {
+    list: (params) => api.get('/feeds', { params }),
+    get: (id) => api.get(`/feeds/${id}`),
+    create: (data) => api.post('/feeds', data),
+    update: (id, data) => api.put(`/feeds/${id}`, data),
+    delete: (id) => api.delete(`/feeds/${id}`),
+    fetch: (id) => api.post(`/feeds/${id}/fetch`),
+    toggle: (id) => api.post(`/feeds/${id}/toggle`),
+  },
+
   // AI 模型配置
   aiConfigs: {
     list: () => api.get('/ai-configs'),

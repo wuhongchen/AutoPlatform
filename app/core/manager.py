@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from bs4 import BeautifulSoup
 from app.config import get_settings
 from app.models import (
+    FeedSource,
     Account, Article, ArticleStatus,
     InspirationRecord, InspirationStatus,
     StylePreset, Task, TaskStatus, TaskName,
@@ -41,6 +42,7 @@ class AppManager:
         self.image = ImageService()
         self._init_builtin_presets()
         self._init_builtin_ai_configs()
+        self._ensure_feed_sources_table()
         self._repair_collected_html()
         self._repair_task_account_bindings()
         self._init_executor()
@@ -1232,6 +1234,137 @@ class AppManager:
             account_id=account_id,
         )
     
+    def _ensure_feed_sources_table(self):
+        """确保 feed_sources 表存在（兼容旧数据库）"""
+        pass  # storage._init_tables 已处理
+
+    # ─── RSS 信息源管理 ───────────────────────────────────────────
+
+    def list_feed_sources(self, account_id: Optional[str] = None) -> List[Dict]:
+        return self.storage.list_feed_sources(account_id=account_id)
+
+    def get_feed_source(self, feed_id: str) -> Optional[Dict]:
+        return self.storage.get_feed_source(feed_id)
+
+    def create_feed_source(self, data: Dict) -> Dict:
+        import uuid
+        data["id"] = data.get("id") or f"feed_{uuid.uuid4().hex[:8]}"
+        return self.storage.create_feed_source(data)
+
+    def update_feed_source(self, feed_id: str, data: Dict) -> bool:
+        return self.storage.update_feed_source(feed_id, data)
+
+    def delete_feed_source(self, feed_id: str) -> bool:
+        return self.storage.delete_feed_source(feed_id)
+
+    def toggle_feed_source(self, feed_id: str) -> bool:
+        return self.storage.toggle_feed_source(feed_id)
+
+    def fetch_feed(self, feed_id: str) -> Dict:
+        """抓取 RSS 源，将新条目写入灵感库"""
+        import uuid, re
+        import xml.etree.ElementTree as ET
+        import requests
+        from datetime import datetime
+
+        feed = self.storage.get_feed_source(feed_id)
+        if not feed:
+            raise Exception("信息源不存在")
+
+        try:
+            resp = requests.get(feed["url"], timeout=30, headers={
+                "User-Agent": "Mozilla/5.0 AutoPlatform/2.0 RSS Reader"
+            })
+            resp.encoding = resp.apparent_encoding or "utf-8"
+            root = ET.fromstring(resp.text)
+        except Exception as e:
+            raise Exception(f"RSS 抓取失败: {e}")
+
+        items = []
+        # RSS 2.0
+        for item in root.iter("item"):
+            items.append({
+                "title": self._rss_text(item, "title"),
+                "link": self._rss_text(item, "link"),
+                "description": self._rss_text(item, "description"),
+                "author": self._rss_text(item, "author") or self._rss_text(item, "dc:creator"),
+                "pub_date": self._rss_text(item, "pubDate"),
+            })
+        # Atom
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        for entry in root.findall(".//atom:entry", ns) or root.findall(".//{http://www.w3.org/2005/Atom}entry"):
+            link_el = entry.find("atom:link", ns) or entry.find("{http://www.w3.org/2005/Atom}link")
+            items.append({
+                "title": self._rss_text(entry, "title", ns),
+                "link": link_el.get("href", "") if link_el is not None else "",
+                "description": self._rss_text(entry, "summary", ns) or self._rss_text(entry, "content", ns),
+                "author": self._rss_text(entry, "author/name", ns),
+                "pub_date": self._rss_text(entry, "published", ns) or self._rss_text(entry, "updated", ns),
+            })
+
+        new_count = 0
+        skipped = 0
+        for item in items:
+            url = (item.get("link") or "").strip()
+            if not url:
+                skipped += 1
+                continue
+            # 去重
+            existing = self.storage.find_inspiration_by_url(url)
+            if existing:
+                skipped += 1
+                continue
+            # 清洗 HTML
+            desc = item.get("description", "") or ""
+            content_html = desc if desc.startswith("<") else f"<p>{desc}</p>"
+            content_text = re.sub(r"<[^>]+>", "", desc).strip() if desc else ""
+            # 写入灵感库
+            record = InspirationRecord(
+                id=f"insp_{uuid.uuid4().hex[:12]}",
+                source_url=url,
+                source_type="rss",
+                source_account=feed.get("name", ""),
+                title=item.get("title", "") or "无标题",
+                author=item.get("author", ""),
+                content=content_text,
+                content_html=content_html,
+                status=InspirationStatus.PENDING_DECISION,
+                account_id=feed.get("account_id", "default"),
+            )
+            self.storage.create_inspiration(record)
+            new_count += 1
+
+        # 更新 feed 状态
+        self.storage.update_feed_source(feed_id, {
+            "last_fetched_at": datetime.now().isoformat(),
+            "item_count": feed.get("item_count", 0) + new_count,
+        })
+
+        return {
+            "feed_id": feed_id,
+            "new_items": new_count,
+            "skipped": skipped,
+            "total": len(items),
+        }
+
+    def _rss_text(self, element, tag: str, ns: dict = None) -> str:
+        """安全提取 RSS 元素文本"""
+        import xml.etree.ElementTree as ET
+        try:
+            if ns:
+                el = element.find(tag, ns)
+            else:
+                el = element.find(tag)
+            if el is None:
+                # 尝试 namespace 形式 {ns}tag
+                for child in element:
+                    if child.tag.endswith("}" + tag) or child.tag == tag:
+                        return (child.text or "").strip()
+                return ""
+            return (el.text or "").strip()
+        except Exception:
+            return ""
+
     def get_stats(self, account_id: Optional[str] = None) -> Dict:
         return self.storage.get_stats(account_id)
 

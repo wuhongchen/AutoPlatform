@@ -62,6 +62,12 @@ const routes = [
         meta: { title: '任务看板', icon: 'List' }
       },
       {
+        path: 'feeds',
+        name: 'Feeds',
+        component: () => import('../views/Feeds.vue'),
+        meta: { title: '信息源', icon: 'Connection' }
+      },
+      {
         path: 'ai-settings',
         name: 'AISettings',
         component: () => import('../views/AISettings.vue'),
