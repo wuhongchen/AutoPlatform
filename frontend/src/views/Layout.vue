@@ -23,19 +23,38 @@
 
       <!-- 导航菜单 -->
       <div class="sidebar-nav">
-        <router-link
-          v-for="route in menuRoutes"
-          :key="route.path"
-          :to="'/' + route.path"
-          class="nav-item"
-          :class="{ active: $route.path === '/' + route.path }"
-        >
-          <el-icon class="nav-icon">
-            <component :is="iconMap[route.meta.icon]" />
-          </el-icon>
-          <span class="nav-label">{{ route.meta.title }}</span>
-          <span v-if="$route.path === '/' + route.path" class="nav-dot" />
-        </router-link>
+        <template v-for="route in menuRoutes" :key="route.path">
+          <!-- 有子菜单的项 -->
+          <template v-if="route.children && route.children.length">
+            <div class="nav-group-title">{{ route.meta.title }}</div>
+            <router-link
+              v-for="child in route.children"
+              :key="child.path"
+              :to="child.path"
+              class="nav-item nav-sub-item"
+              :class="{ active: $route.path === child.path }"
+            >
+              <el-icon class="nav-icon">
+                <component :is="iconMap[child.meta.icon]" />
+              </el-icon>
+              <span class="nav-label">{{ child.meta.title }}</span>
+              <span v-if="$route.path === child.path" class="nav-dot" />
+            </router-link>
+          </template>
+          <!-- 普通菜单项 -->
+          <router-link
+            v-else
+            :to="'/' + route.path"
+            class="nav-item"
+            :class="{ active: $route.path === '/' + route.path }"
+          >
+            <el-icon class="nav-icon">
+              <component :is="iconMap[route.meta.icon]" />
+            </el-icon>
+            <span class="nav-label">{{ route.meta.title }}</span>
+            <span v-if="$route.path === '/' + route.path" class="nav-dot" />
+          </router-link>
+        </template>
       </div>
 
       <!-- 底部信息 -->
@@ -215,6 +234,19 @@ onMounted(async () => {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.nav-group-title {
+  padding: 18px 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.nav-sub-item {
+  padding-left: 28px;
 }
 
 /* === 侧边栏底部 === */

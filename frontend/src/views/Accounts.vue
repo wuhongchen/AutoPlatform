@@ -38,7 +38,7 @@
                 <el-tag v-if="row.ad_footer_html" size="small" type="warning">底部</el-tag>
                 <span v-if="!row.ad_header_html && !row.ad_footer_html" class="text-gray-400">未配置</span>
               </div>
-              <el-button size="small" link type="primary" @click="openAdDialog(row)">
+              <el-button size="small" type="primary" plain @click="openAdDialog(row)">
                 配置广告位
               </el-button>
             </div>
