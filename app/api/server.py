@@ -69,6 +69,9 @@ def create_account():
         ad_footer_html=data.get("ad_footer_html", ""),
         pipeline_role=data.get("pipeline_role", "tech_expert"),
         pipeline_batch_size=data.get("pipeline_batch_size", 3),
+        content_direction=data.get("content_direction", ""),
+        prompt_direction=data.get("prompt_direction", ""),
+        wechat_prompt_direction=data.get("wechat_prompt_direction", ""),
     )
     return jsonify(account.model_dump())
 
@@ -479,6 +482,26 @@ def publish_article(article_id):
         "message": "发布任务已创建"
     }), 202
 
+@app.route("/api/articles/<article_id>/wechat-copy", methods=["GET", "POST"])
+def get_article_wechat_copy(article_id):
+    """生成文章的微信公众号可复制 HTML。"""
+    data = request.get_json(silent=True) or {}
+    template = data.get("template") or request.args.get("template") or "default"
+    full_html_raw = data.get("full_html")
+    if full_html_raw is None:
+        full_html_raw = request.args.get("full_html", "")
+    full_html = str(full_html_raw).lower() in {"1", "true", "yes", "on"}
+    try:
+        return jsonify(
+            manager.render_article_for_wechat_copy(
+                article_id,
+                template=template,
+                full_html=full_html,
+            )
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 @app.route("/api/templates", methods=["GET"])
 def list_templates():
     """获取可用模板列表"""
@@ -594,6 +617,35 @@ def process_pipeline():
         "status": task.status.value,
         "message": "批量处理任务已创建"
     }), 202
+
+@app.route("/api/content-flow/run", methods=["POST"])
+def run_content_flow():
+    """从链接采集到公众号可复制成稿的一次性流程（异步执行）。"""
+    data = request.get_json(silent=True) or {}
+    try:
+        url = (data.get("url") or "").strip()
+        if not url:
+            return jsonify({"error": "链接不能为空"}), 400
+        task = manager.create_task(
+            name="content_flow",
+            payload={
+                "url": url,
+                "style": data.get("style"),
+                "template": data.get("template", "default"),
+                "use_references": data.get("use_references", True),
+                "custom_instructions": data.get("instructions") or data.get("custom_instructions"),
+                "inspiration_ids": data.get("inspiration_ids"),
+            },
+            account_id=data.get("account_id", "default"),
+            target_id=url,
+        )
+        return jsonify({
+            "task_id": task.id,
+            "status": task.status.value,
+            "message": "链接成稿任务已创建",
+        }), 202
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 # ============ Vue 前端静态文件服务 ============
 

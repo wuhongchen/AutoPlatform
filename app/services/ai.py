@@ -3,12 +3,15 @@ AI服务
 提供AI改写、评分等功能
 """
 
+import asyncio
 import json
 import re
 import time
 from typing import Dict, List, Optional
 import openai
 import httpx
+from bs4 import BeautifulSoup
+from volcenginesdkarkruntime import Ark
 from app.config import get_settings
 from app.core.logger import get_logger
 from app.services.style_presets import StylePresetManager, StylePreset
@@ -21,9 +24,25 @@ class AIService:
     CHUNK_TARGET_SIZE = 1800
     MAX_REFERENCE_COUNT = 2
     MAX_REFERENCE_CHARS = 240
+    MAX_REFERENCE_SIMILARITY = 0.88
     MAX_IMAGE_CONTEXTS = 4
     OVERLAP_MIN_CHARS = 400
-    OVERLAP_THRESHOLD = 0.22
+    OVERLAP_THRESHOLD = 0.14
+
+    PROMOTION_LINE_PATTERNS = (
+        r"扫码|二维码|长按识别|加(我)?微信|添加微信|进群|读者群|交流群",
+        r"关注.{0,12}公众号|公众号.{0,12}关注|点击.{0,8}(蓝字|关注|原文)|阅读原文",
+        r"点个(赞|在看)|点赞|在看|转发|分享给|星标|置顶|设为星标",
+        r"商务合作|广告合作|赞赏|打赏|福利|优惠|下单|购买|课程|训练营|私信|后台回复",
+    )
+    PROMOTION_IMAGE_PATTERNS = (
+        r"qr|qrcode|二维码|扫码|关注|公众号|赞赏|打赏|广告|banner|ad_",
+    )
+    AI_STYLE_PHRASES = (
+        "不是简单的", "而是一个", "本质上", "核心在于", "可以说",
+        "值得注意的是", "从某种程度上", "我们可以看到", "不难发现",
+        "赋能", "闭环", "抓手", "底层逻辑", "价值锚点", "生态化", "范式",
+    )
 
     def __init__(self):
         settings = get_settings()
@@ -34,12 +53,25 @@ class AIService:
             write=self.config.timeout,
             pool=self.config.timeout,
         )
+        self._use_ark_responses = self._should_use_ark_responses()
+        self.ark_client = None
+        if self._use_ark_responses:
+            self.ark_client = Ark(
+                api_key=self.config.api_key,
+                base_url=self.config.endpoint,
+                timeout=timeout,
+            )
         self.client = openai.AsyncOpenAI(
             api_key=self.config.api_key,
             base_url=self.config.endpoint,
             timeout=timeout
         )
         self.logger = get_logger("ai")
+
+    def _should_use_ark_responses(self) -> bool:
+        provider = (self.config.provider or "").strip().lower()
+        endpoint = (self.config.endpoint or "").strip().lower()
+        return provider in {"ark", "volcengine", "volces"} and "volces.com/api/v3" in endpoint
 
     async def _call_llm(
         self,
@@ -60,26 +92,48 @@ class AIService:
         )
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.config.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-
-            content = response.choices[0].message.content
+            if self._use_ark_responses:
+                response = await asyncio.to_thread(
+                    self.ark_client.responses.create,
+                    model=self.config.model,
+                    instructions=system_prompt,
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": user_prompt,
+                                }
+                            ],
+                        }
+                    ],
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                    thinking={"type": "disabled"},
+                    store=False,
+                )
+                content = self._extract_ark_response_text(response)
+            else:
+                response = await self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                content = response.choices[0].message.content
             duration_ms = int((time.time() - start_time) * 1000)
 
             usage = response.usage
             if usage:
                 self.logger.info(
                     f"[{task_name}] LLM success | duration={duration_ms}ms "
-                    f"prompt_tokens={usage.prompt_tokens} "
-                    f"completion_tokens={usage.completion_tokens} "
-                    f"total_tokens={usage.total_tokens}"
+                    f"prompt_tokens={self._get_usage_value(usage, 'prompt_tokens', 'input_tokens')} "
+                    f"completion_tokens={self._get_usage_value(usage, 'completion_tokens', 'output_tokens')} "
+                    f"total_tokens={self._get_usage_value(usage, 'total_tokens')}"
                 )
             else:
                 self.logger.info(
@@ -94,7 +148,68 @@ class AIService:
                 f"[{task_name}] LLM failed | duration={duration_ms}ms "
                 f"error={type(e).__name__}: {e}"
             )
+            friendly_error = self._normalize_provider_error(e)
+            if friendly_error:
+                raise RuntimeError(friendly_error) from e
             raise
+
+    def _extract_ark_response_text(self, response) -> str:
+        """从 Ark Responses API 响应中提取 assistant 输出文本。"""
+        if getattr(response, "error", None):
+            raise RuntimeError(str(response.error))
+
+        text_parts: List[str] = []
+        for item in getattr(response, "output", None) or []:
+            contents = self._get_obj_value(item, "content") or []
+            for content_item in contents:
+                item_type = self._get_obj_value(content_item, "type")
+                item_text = self._get_obj_value(content_item, "text")
+                if item_type == "output_text" and item_text:
+                    text_parts.append(item_text)
+
+        content = "\n".join(part.strip() for part in text_parts if part and part.strip()).strip()
+        if content:
+            status = getattr(response, "status", "")
+            if status and status != "completed":
+                self.logger.warning(
+                    f"[llm_call] Ark response status={status}, using partial text"
+                )
+            return content
+
+        status = getattr(response, "status", "")
+        incomplete = getattr(response, "incomplete_details", None)
+        raise RuntimeError(f"Ark Responses API 未返回文本内容。status={status}, incomplete={incomplete}")
+
+    def _get_obj_value(self, obj, key: str):
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
+
+    def _get_usage_value(self, usage, *keys: str) -> int:
+        for key in keys:
+            value = self._get_obj_value(usage, key)
+            if value is not None:
+                return value
+        return 0
+
+    def _normalize_provider_error(self, error: Exception) -> str:
+        """将常见供应商鉴权/订阅错误转成可操作提示。"""
+        message = str(error)
+        lowered = message.lower()
+        if "invalidsubscription" in lowered or "codingplan" in lowered:
+            return (
+                "AI 模型调用失败：当前火山 Ark CodingPlan 订阅无效或已过期。"
+                "请在火山引擎控制台续费/开通 CodingPlan，或把 .env 中的 "
+                "AI_ENDPOINT、AI_MODEL、AI_API_KEY 切换为有效的其他模型服务。"
+            )
+        if "invalid authentication" in lowered or "invalid_authentication_error" in lowered:
+            return "AI 模型调用失败：API Key 无效或不属于当前模型服务，请检查 .env 中的 AI_API_KEY 和 AI_ENDPOINT。"
+        if "only available for coding agents" in lowered or "access_terminated_error" in lowered:
+            return (
+                "AI 模型调用失败：当前 Kimi Key 只能用于 Kimi Coding Agent，"
+                "不能用于 AutoPlatform 的通用内容改写接口。请换用 Kimi Open Platform / Moonshot 的通用 API Key。"
+            )
+        return ""
 
     async def rewrite_article(
         self,
@@ -106,20 +221,21 @@ class AIService:
         image_contexts: Optional[List[Dict]] = None,
     ) -> str:
         """改写文章"""
-        preset = StylePresetManager.get_preset(style_preset)
+        preset = self._get_style_preset(style_preset)
         if not preset:
             self.logger.warning(
                 f"[rewrite] Preset '{style_preset}' not found, fallback to tech_expert"
             )
-            preset = StylePresetManager.get_preset("tech_expert")
+            preset = self._get_style_preset("tech_expert")
 
-        system_prompt = preset.system_prompt
+        system_prompt = self._build_rewrite_system_prompt(preset)
         if custom_instructions:
             system_prompt += f"\n\n额外要求：\n{custom_instructions}"
 
         effective_references = self._compress_references(reference_articles)
+        rewrite_source = self._prepare_source_for_rewrite(content)
         user_prompt = self._build_rewrite_prompt(
-            content=content,
+            content=rewrite_source,
             title=title,
             reference_articles=effective_references,
             style_params=preset.params,
@@ -138,6 +254,7 @@ class AIService:
             max_tokens=max_tokens,
             task_name="rewrite"
         )
+        rewritten = self._sanitize_rewritten_output(rewritten)
 
         if self._needs_deeper_rewrite(content, rewritten):
             self.logger.warning(
@@ -152,9 +269,52 @@ class AIService:
                 image_contexts=image_contexts,
             )
             if intensified:
-                rewritten = intensified
+                rewritten = self._sanitize_rewritten_output(intensified)
 
         return rewritten
+
+    def _build_rewrite_system_prompt(self, preset: StylePreset) -> str:
+        """叠加统一编辑约束，避免单个风格预设把改写做成轻润色。"""
+        ai_phrases = "、".join(self.AI_STYLE_PHRASES)
+        return f"""{preset.system_prompt}
+
+统一编辑红线：
+1. 你不是润色助手，而是公众号选题编辑。先抽取事实，再按新账号视角重写成一篇新稿。
+2. 保留事实、数据、人物、产品名和时间线，但不要保留原文叙事身份、口头禅、段落顺序、营销话术。
+3. 输出必须像真实中文编辑写的自然稿，不要有 AI 总结腔、模板腔、口号腔。
+4. 严禁使用或高频堆叠这些 AI 味表达：{ai_phrases}。
+5. 默认使用第三方编辑视角，不继承原作者第一人称。原文中的“我/我们/我的读者/之前推过/我自己用下来”等自述，要改为客观描述或直接删除。
+6. 删除软推广和导流内容，包括关注公众号、扫码、加微信、进群、课程/优惠/福利、点赞在看、阅读原文、商务合作、赞赏二维码等。
+7. 只输出可直接进入排版模板的 HTML 片段，不要输出 Markdown、代码围栏、解释说明或“以下是改写稿”。"""
+
+    def _get_style_preset(self, preset_id: str) -> Optional[StylePreset]:
+        """同时支持内置风格与后台创建的自定义风格。"""
+        preset = StylePresetManager.get_preset(preset_id)
+        if preset:
+            return preset
+
+        try:
+            from app.services.storage import StorageService
+
+            stored = StorageService().get_style_preset(preset_id)
+            if not stored or not stored.is_active:
+                return None
+            tone = stored.tone.value if hasattr(stored.tone, "value") else stored.tone
+            style = stored.style.value if hasattr(stored.style, "value") else stored.style
+            return StylePreset(
+                id=stored.id,
+                name=stored.name,
+                description=stored.description,
+                system_prompt=stored.system_prompt,
+                tone=tone,
+                style=style,
+                temperature=stored.temperature,
+                max_tokens=stored.max_tokens,
+                params=stored.params or {},
+            )
+        except Exception as exc:
+            self.logger.warning(f"[rewrite] failed to load custom style '{preset_id}': {exc}")
+            return None
 
     def _compress_references(self, reference_articles: Optional[List[Dict]]) -> List[Dict]:
         """压缩参考文章，避免提示词过长导致改写请求过慢。"""
@@ -176,14 +336,14 @@ class AIService:
         content_len = len(content or "")
 
         if content_len >= 4500:
-            max_tokens = min(max_tokens, 1800)
+            max_tokens = min(max_tokens, 3200)
         elif content_len >= self.LONG_CONTENT_THRESHOLD:
-            max_tokens = min(max_tokens, 2200)
+            max_tokens = min(max_tokens, 3000)
         elif content_len >= 1800:
             max_tokens = min(max_tokens, 2600)
 
         if reference_count:
-            max_tokens = min(max_tokens, 2200)
+            max_tokens = min(max_tokens, 2800)
 
         return max(900, max_tokens)
 
@@ -290,13 +450,13 @@ class AIService:
             prompt_parts.append(f"原标题：{title}\n")
 
         if reference_articles:
-            prompt_parts.append("参考文章：")
+            prompt_parts.append("参考素材（只借鉴选题角度和信息补充，不复用句子、段落结构或作者身份）：")
             for i, ref in enumerate(reference_articles[:3], 1):
                 ref_title = ref.get("title", "")
                 ref_content = ref.get("content", "")[:500]
                 prompt_parts.append(f"\n参考{i}：《{ref_title}》")
                 prompt_parts.append(f"内容摘要：{ref_content}...")
-            prompt_parts.append("\n请借鉴以上参考文章的写作风格和角度，但保持原创性。\n")
+            prompt_parts.append("\n如果参考素材与原文高度相似，主动忽略它，不要让它增加原文重合度。\n")
 
         if style_params:
             if "focus" in style_params:
@@ -317,17 +477,20 @@ class AIService:
                     prompt_parts.append(f"- {' | '.join(bits)}")
             prompt_parts.append("")
 
-        prompt_parts.append(f"原文内容：\n\n{content}\n")
+        prompt_parts.append(f"待改写素材（已初步剔除推广噪声；只把它当事实材料，不要沿用原文表达）：\n\n{content}\n")
         prompt_parts.append("""
 改写要求：
-1. 不要直接复制原文句子，要重构开头、段落顺序和句式
-2. 可以补充背景知识和解释，但不要偏离原文主题
-3. 保持核心事实、数据、时间线准确
-4. 输出HTML格式，使用h2/h3标签作为标题
-5. 段落不要太长，适合手机阅读
-6. 适当使用加粗、列表等排版元素
-7. 除专有名词、机构名、产品名外，避免连续复用原文措辞
-8. 如果图片线索和正文相关，可以自然写出“图中场景反映了什么”，但不要凭空编造图片细节
+1. 先在心里完成“事实提取 -> 结构重组 -> 重新表达”，最终只输出成稿。
+2. 开头必须重写，不得沿用原文第一段的切入方式、作者经历、周末/额度/之前推过等自述。
+3. 至少重排 60% 的段落顺序；小标题必须重新命名，不能照搬原文标题。
+4. 除专有名词、产品名、固定术语外，不要出现连续 10 个中文字符与原文完全相同。
+5. 删除原文里的软推广、关注引导、二维码提示、课程/福利/购买导流、点赞在看、阅读原文、商务合作。
+6. 使用中性或账号化编辑视角，不要出现“我”“我们这个号”“我的读者”“我之前写过”等源作者第一人称。
+7. 可以补充必要背景和解释，但不要编造事实、数据、截图细节和不存在的结论。
+8. 语言要像真实编辑自然写稿：具体、克制、有判断；不要使用 AI 腔套话、宏大空词和过度总结。
+9. 输出 HTML 片段，只允许使用 h2、h3、p、strong、em、ul、ol、li、blockquote、figure、img、figcaption。
+10. 不要使用 Markdown 符号，不要输出 ```，不要输出 html/body/style/script，不要把 ul/ol 嵌进 p 标签。
+11. 如果图片线索和正文相关，可以自然说明图片承载的信息；不知道图片内容时只写“配图/截图位置”，不要编造视觉细节。
 """)
 
         return "\n".join(prompt_parts)
@@ -353,6 +516,11 @@ class AIService:
                     content,
                     record.get("content", "")
                 )
+                if similarity >= self.MAX_REFERENCE_SIMILARITY:
+                    self.logger.info(
+                        f"[rewrite] skip near-duplicate reference: {record.get('title', '')} similarity={similarity:.3f}"
+                    )
+                    continue
                 if similarity >= similarity_threshold:
                     reference_articles.append({
                         "title": record.get("title", ""),
@@ -450,7 +618,7 @@ class AIService:
         image_contexts: Optional[List[Dict]] = None,
     ) -> str:
         system_prompt = (
-            f"{preset.system_prompt}\n\n"
+            f"{self._build_rewrite_system_prompt(preset)}\n\n"
             "你正在执行二次深改。目标不是润色初稿，而是在不改变核心事实的前提下，"
             "彻底重构表达方式、段落组织和叙述节奏，显著降低与原文的字面重合。"
         )
@@ -476,8 +644,10 @@ class AIService:
 2. 改写开头，不要沿用原文或初稿的起手方式
 3. 重新组织段落顺序与句式，避免连续复用原文措辞
 4. 除专有名词外，尽量不用和原文相同的长短语
-5. 图片线索仅作为辅助理解，不要编造图片不存在的细节
-6. 输出最终成稿，不要解释过程
+5. 删除第一人称自述、关注引导、扫码、软广、课程/福利/购买导流、点赞在看、阅读原文
+6. 去掉 AI 腔套话，使用真实编辑口吻
+7. 图片线索仅作为辅助理解，不要编造图片不存在的细节
+8. 输出最终 HTML 片段，不要解释过程，不要 Markdown
 """)
         try:
             return await self._call_llm(
@@ -490,6 +660,82 @@ class AIService:
         except Exception as exc:
             self.logger.warning(f"[rewrite] overlap retry failed, keep first pass: {exc}")
             return first_pass_html
+
+    def _prepare_source_for_rewrite(self, content: str) -> str:
+        """改写前剔除明显推广/导流噪声，降低模型复读这些内容的概率。"""
+        raw = (content or "").strip()
+        if not raw:
+            return ""
+
+        lines = [line.strip() for line in re.split(r"[\r\n]+", raw)]
+        kept = [
+            line
+            for line in lines
+            if line and not self._is_promotional_text(line)
+        ]
+        cleaned = "\n".join(kept).strip()
+        if len(cleaned) < max(20, len(raw) * 0.2):
+            return raw
+        return cleaned
+
+    def _sanitize_rewritten_output(self, html: str) -> str:
+        """修复模型输出的常见格式问题，并移除残留推广块。"""
+        cleaned = (html or "").strip()
+        if not cleaned:
+            return ""
+
+        cleaned = re.sub(r"^```(?:html)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        soup = BeautifulSoup(cleaned, "html.parser")
+        for tag in soup.find_all(["script", "style", "iframe"]):
+            tag.decompose()
+        for tag in soup.find_all(["html", "body"]):
+            tag.unwrap()
+
+        allowed_tags = {
+            "h2", "h3", "p", "strong", "em", "ul", "ol", "li",
+            "blockquote", "figure", "img", "figcaption", "br",
+        }
+        for tag in list(soup.find_all(True)):
+            if tag.name not in allowed_tags:
+                tag.unwrap()
+                continue
+
+            if tag.name == "img":
+                src = tag.get("src") or tag.get("data-src") or ""
+                alt = tag.get("alt") or ""
+                if self._is_promotional_image(src, alt):
+                    parent = tag.parent
+                    tag.decompose()
+                    if parent and parent.name == "figure" and not parent.get_text(strip=True) and not parent.find("img"):
+                        parent.decompose()
+                    continue
+                tag.attrs = {
+                    key: value
+                    for key, value in tag.attrs.items()
+                    if key in {"src", "data-src", "alt"}
+                }
+            else:
+                tag.attrs = {}
+
+        for tag in list(soup.find_all(["p", "li", "blockquote", "figcaption", "h2", "h3"])):
+            text = tag.get_text(" ", strip=True)
+            if not text:
+                tag.decompose()
+                continue
+            if self._is_promotional_text(text):
+                tag.decompose()
+
+        return str(soup).strip()
+
+    def _is_promotional_text(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "").lower()
+        return any(re.search(pattern, normalized, re.IGNORECASE) for pattern in self.PROMOTION_LINE_PATTERNS)
+
+    def _is_promotional_image(self, src: str, alt: str = "") -> bool:
+        normalized = f"{src or ''} {alt or ''}".lower()
+        return any(re.search(pattern, normalized, re.IGNORECASE) for pattern in self.PROMOTION_IMAGE_PATTERNS)
 
     def _calculate_similarity(self, text1: str, text2: str) -> float:
         """基于关键词重叠的 Jaccard 相似度"""

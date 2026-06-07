@@ -75,8 +75,18 @@ class TaskExecutor:
         message = (error_msg or "").lower()
         non_retryable_markers = (
             "authenticationerror",
+            "invalid authentication",
+            "permissiondeniederror",
+            "access_terminated_error",
+            "only available for coding agents",
             "unauthorized",
+            "forbidden",
             "api key",
+            "invalidsubscription",
+            "codingplan",
+            "subscription",
+            "订阅",
+            "续费",
             "missing or invalid",
             "not found",
             "不存在",
@@ -163,6 +173,8 @@ class TaskExecutor:
             return self._run_publish(payload)
         elif name == "batch":
             return self._run_batch(payload, account_id)
+        elif name == "content_flow":
+            return self._run_content_flow(payload, account_id, task.id)
         else:
             raise ValueError(f"Unknown task name: {name}")
 
@@ -245,6 +257,21 @@ class TaskExecutor:
             "total": len(articles),
             "success": sum(1 for r in results if r["status"] == "success"),
         }
+
+    def _run_content_flow(self, payload: dict, account_id: str, task_id: str):
+        """执行链接到公众号成稿的一次性流程。"""
+        return self._run_async(
+            self._manager.run_content_flow_from_url(
+                url=payload["url"],
+                account_id=account_id or payload.get("account_id", "default"),
+                style=payload.get("style"),
+                template=payload.get("template", "default"),
+                use_references=payload.get("use_references", True),
+                custom_instructions=payload.get("custom_instructions"),
+                inspiration_ids=payload.get("inspiration_ids"),
+                task_id=task_id,
+            )
+        )
 
     def shutdown(self, wait: bool = True):
         """关闭执行器"""

@@ -305,11 +305,23 @@ class AppManager:
                 continue
 
             should_keep = src in explicit_image_set
-            if not should_keep:
-                try:
-                    should_keep = not self.collector._is_qr_or_ad(src, img)
-                except Exception:
-                    should_keep = True
+            try:
+                if self.collector._is_qr_or_ad(src, img):
+                    should_keep = False
+            except Exception:
+                pass
+
+            image_context = _context_for_image(img)
+            direct_context = ""
+            if img.parent and getattr(img.parent, "name", "") != "[document]":
+                direct_context = img.parent.get_text(" ", strip=True)
+            promo_context = re.sub(
+                r"\s+",
+                "",
+                " ".join([src, img.get("alt") or "", direct_context]).lower(),
+            )
+            if re.search(r"扫码|二维码|关注公众号|公众号关注|长按识别|加微信|读者群|交流群|赞赏|商务合作|广告", promo_context):
+                should_keep = False
 
             if not should_keep:
                 continue
@@ -318,7 +330,7 @@ class AppManager:
             reusable.append({
                 "src": src,
                 "alt": (img.get("alt") or "").strip(),
-                "context": _context_for_image(img),
+                "context": image_context,
             })
 
         return reusable
@@ -660,6 +672,185 @@ class AppManager:
             content_limit=content_limit,
             sync_limit=sync_limit,
         )
+
+    def _build_account_rewrite_instructions(
+        self,
+        account: Optional[Account],
+        custom_instructions: Optional[str] = None,
+    ) -> str:
+        """拼接账户级内容方向与本次补充要求。"""
+        parts: List[str] = []
+        if account:
+            account_instruction_fields = [
+                ("账号内容方向", account.content_direction),
+                ("账号改写要求", account.prompt_direction),
+                ("公众号成稿要求", account.wechat_prompt_direction),
+            ]
+            for label, value in account_instruction_fields:
+                value = (value or "").strip()
+                if value:
+                    parts.append(f"{label}：{value}")
+
+        custom_instructions = (custom_instructions or "").strip()
+        if custom_instructions:
+            parts.append(f"本次补充要求：{custom_instructions}")
+
+        return "\n".join(parts)
+
+    def render_article_for_wechat_copy(
+        self,
+        article_id: str,
+        template: str = "default",
+        full_html: bool = False,
+    ) -> Dict[str, str]:
+        """将已改写文章渲染为可复制到微信公众号编辑器的 HTML。"""
+        article = self.storage.get_article(article_id)
+        if not article:
+            raise Exception("文章不存在")
+        if not (article.rewritten_html or article.original_html):
+            raise Exception("文章内容为空")
+
+        account = self.storage.get_account(article.account_id)
+        template_name = (template or "").strip() or "default"
+        content_html = article.rewritten_html or article.original_html
+        author = article.source_author or (account.wechat_author if account else "")
+        cover_image = article.cover_image or (article.images[0] if article.images else "")
+        wechat = WechatService(
+            account.wechat_appid if account else "",
+            account.wechat_secret if account else "",
+        )
+        html = wechat.render_with_template(
+            title=article.source_title or "无标题",
+            content=content_html,
+            template_name=template_name,
+            author=author,
+            cover_image=cover_image,
+            full_html=full_html,
+            ad_header_html=account.ad_header_html if account else "",
+            ad_footer_html=account.ad_footer_html if account else "",
+        )
+        text = BeautifulSoup(html, "html.parser").get_text("\n", strip=True)
+        return {
+            "article_id": article.id,
+            "account_id": article.account_id,
+            "title": article.source_title,
+            "template": template_name,
+            "html": html,
+            "text": text,
+        }
+
+    async def run_content_flow_from_url(
+        self,
+        url: str,
+        account_id: str,
+        style: Optional[str] = None,
+        template: str = "default",
+        use_references: bool = True,
+        custom_instructions: Optional[str] = None,
+        inspiration_ids: Optional[List[str]] = None,
+        task_id: str = "",
+    ) -> Dict:
+        """从链接采集、生成文章、改写，并输出公众号可复制 HTML。"""
+        url = (url or "").strip()
+        if not url:
+            raise Exception("链接不能为空")
+
+        account_id = (account_id or "").strip() or "default"
+        account = self.storage.get_account(account_id)
+        if not account:
+            raise Exception("账户不存在")
+
+        template_name = (template or "").strip() or "default"
+        selected_style = (style or account.pipeline_role or "tech_expert").strip()
+        logger.info(
+            f"[content_flow] start url={url} account={account_id} "
+            f"style={selected_style} template={template_name}"
+        )
+
+        record = await self.collect_inspiration(url=url, account_id=account_id)
+        record_metadata = dict(record.metadata or {})
+        record_metadata["content_flow"] = {
+            "task_id": task_id,
+            "stage": "collected",
+            "created_at": datetime.now().isoformat(),
+        }
+        self.storage.update_inspiration(record.id, {"metadata": record_metadata})
+
+        article = self.create_article_from_inspiration(record.id)
+        combined_instructions = self._build_account_rewrite_instructions(
+            account,
+            custom_instructions=custom_instructions,
+        )
+        rewritten_article = await self.rewrite_article(
+            article_id=article.id,
+            style=selected_style,
+            use_references=use_references,
+            custom_instructions=combined_instructions or None,
+            inspiration_ids=inspiration_ids,
+        )
+        formatted = self.render_article_for_wechat_copy(
+            rewritten_article.id,
+            template=template_name,
+        )
+
+        article_metadata = dict(rewritten_article.metadata or {})
+        article_metadata["content_flow"] = {
+            "task_id": task_id,
+            "inspiration_id": record.id,
+            "template": template_name,
+            "copy_ready": True,
+            "completed_at": datetime.now().isoformat(),
+        }
+        self.storage.update_article(rewritten_article.id, {"metadata": article_metadata})
+        self.storage.update_account(account_id, {
+            "last_run_at": datetime.now().isoformat(),
+            "run_count": (account.run_count or 0) + 1,
+        })
+
+        logger.info(
+            f"[content_flow] completed url={url} article={rewritten_article.id} "
+            f"inspiration={record.id}"
+        )
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "account_id": account_id,
+            "url": url,
+            "inspiration_id": record.id,
+            "article_id": rewritten_article.id,
+            "title": rewritten_article.source_title,
+            "style": selected_style,
+            "template": template_name,
+            "article_status": rewritten_article.status.value,
+            "copy_ready": True,
+            "copy_text_length": len(formatted["text"]),
+            "steps": [
+                {
+                    "name": "采集",
+                    "module": "inspirations",
+                    "status": "completed",
+                    "id": record.id,
+                },
+                {
+                    "name": "生成文章",
+                    "module": "articles",
+                    "status": "completed",
+                    "id": article.id,
+                },
+                {
+                    "name": "AI 改写",
+                    "module": "articles",
+                    "status": "completed",
+                    "id": rewritten_article.id,
+                },
+                {
+                    "name": "公众号格式",
+                    "module": "templates",
+                    "status": "completed",
+                    "id": template_name,
+                },
+            ],
+        }
     
     async def collect_inspiration(self, url: str, account_id: str) -> InspirationRecord:
         logger.info(f"[collect] url={url} account={account_id}")
@@ -871,7 +1062,8 @@ class AppManager:
                 )
                 reference_records = [
                     {"title": i.title, "content": i.content}
-                    for i in inspirations if i.id != article_id
+                    for i in inspirations
+                    if i.article_id != article.id and i.source_url != article.source_url
                 ]
 
         self.storage.update_article(article_id, {"status": ArticleStatus.REWRITING})
@@ -899,7 +1091,7 @@ class AppManager:
             metadata = dict(article.metadata or {})
             metadata.update({
                 "used_inspiration_ids": inspiration_ids or [],
-                "reference_count": len(reference_records) if reference_records else 0,
+                "reference_count": result.get("reference_count", 0),
                 "rewrite_mode": rewrite_mode,
             })
             self.storage.update_article(article_id, {

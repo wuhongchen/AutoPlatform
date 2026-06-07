@@ -26,6 +26,12 @@ const routes = [
         meta: { title: '我的文章', icon: 'Document' }
       },
       {
+        path: 'content-flow',
+        name: 'ContentFlow',
+        component: () => import('../views/ContentFlow.vue'),
+        meta: { title: '链接成稿', icon: 'Link' }
+      },
+      {
         path: 'records',
         name: 'Records',
         component: () => import('../views/Records.vue'),

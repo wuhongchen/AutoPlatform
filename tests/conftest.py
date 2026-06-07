@@ -61,6 +61,8 @@ class FakeCollectorService:
 
 
 class FakeAIService:
+    calls = []
+
     async def score_article(self, title: str, content: str, direction: str = ""):
         return {
             "score": 88,
@@ -80,6 +82,14 @@ class FakeAIService:
         title: str = None,
         image_contexts=None,
     ):
+        self.calls.append({
+            "content": content,
+            "style_preset": style_preset,
+            "inspiration_records": inspiration_records,
+            "custom_instructions": custom_instructions,
+            "title": title,
+            "image_contexts": image_contexts,
+        })
         extra = f" [custom: {custom_instructions}]" if custom_instructions else ""
         image_hint = ""
         if image_contexts:
@@ -107,9 +117,12 @@ class FakeWechatService:
         full_html: bool = False,
         **kwargs,
     ):
+        ad_header_html = kwargs.get("ad_header_html", "")
+        ad_footer_html = kwargs.get("ad_footer_html", "")
         return (
             f"<article data-template='{template_name}'>"
-            f"<h1>{title}</h1><div>{content}</div><p>{author}</p></article>"
+            f"<h1>{title}</h1>{ad_header_html}<div>{content}</div>"
+            f"{ad_footer_html}<p>{author}</p></article>"
         )
 
     def create_draft(self, title: str, content: str, author: str = "", thumb_media_id: str = "", digest: str = ""):
@@ -314,6 +327,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr("app.core.manager.WechatLoginStateService", FakeWechatLoginStateService)
     monkeypatch.setattr("app.core.manager.ImageService", FakeImageService)
     FakeWechatLoginStateService.state_by_account = {}
+    FakeAIService.calls = []
 
     test_manager = AppManager()
     monkeypatch.setattr(server, "manager", test_manager)

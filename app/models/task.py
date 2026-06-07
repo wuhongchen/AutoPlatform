@@ -25,6 +25,7 @@ class TaskName(str, Enum):
     REWRITE = "rewrite"       # 改写文章
     PUBLISH = "publish"       # 发布文章
     BATCH = "batch"           # 批量处理
+    CONTENT_FLOW = "content_flow"  # 链接采集到公众号成稿
 
 
 class Task(BaseDBModel):

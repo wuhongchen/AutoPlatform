@@ -455,6 +455,16 @@
                 <div class="preview-subtitle">按模板和账户广告位展示最终阅读效果</div>
               </div>
               <div class="preview-actions">
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  :disabled="!resultArticleTitle"
+                  @click="copyTextToClipboard(resultArticleTitle, '公众号标题')"
+                >
+                  <el-icon><CopyDocument /></el-icon>
+                  复制标题
+                </el-button>
                 <el-select v-model="resultPreviewTemplate" size="small" style="width: 140px" @change="refreshResultPreview">
                   <el-option
                     v-for="(tpl, key) in templates"
@@ -473,6 +483,36 @@
               <el-tag size="small" type="info">{{ resultPreviewAccount?.name || resultDialogArticle.account_id || 'default' }}</el-tag>
               <el-tag v-if="resultPreviewAccount?.ad_header_html" size="small" type="success">头部广告已启用</el-tag>
               <el-tag v-if="resultPreviewAccount?.ad_footer_html" size="small" type="warning">底部广告已启用</el-tag>
+            </div>
+
+            <div class="result-copy-title-panel">
+              <div class="result-copy-title-row">
+                <span class="result-copy-title-label">公众号标题</span>
+                <span class="result-copy-title-text">{{ resultArticleTitle || '未命名文章' }}</span>
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  :disabled="!resultArticleTitle"
+                  @click="copyTextToClipboard(resultArticleTitle, '公众号标题')"
+                >
+                  复制
+                </el-button>
+              </div>
+              <div
+                v-if="resultBodyTitle && resultBodyTitle !== resultArticleTitle"
+                class="result-copy-title-row"
+              >
+                <span class="result-copy-title-label">正文首标题</span>
+                <span class="result-copy-title-text">{{ resultBodyTitle }}</span>
+                <el-button
+                  size="small"
+                  plain
+                  @click="copyTextToClipboard(resultBodyTitle, '正文首标题')"
+                >
+                  复制
+                </el-button>
+              </div>
             </div>
 
             <div class="mobile-preview-shell result-mobile-preview-shell">
@@ -499,7 +539,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh, Document, Plus } from '@element-plus/icons-vue'
+import { CopyDocument, Refresh, Document, Plus } from '@element-plus/icons-vue'
 import api from '../api'
 import { useAccountStore, useArticleStore, useAppStore, useImageAssetStore } from '../stores'
 
@@ -587,6 +627,17 @@ const publishAccount = computed(() => {
 const resultPreviewAccount = computed(() => {
   if (!resultDialogArticle.value) return null
   return accountStore.accounts.find(acc => acc.account_id === resultDialogArticle.value.account_id) || null
+})
+
+const resultArticleTitle = computed(() => {
+  return (resultDialogArticle.value?.source_title || '').trim()
+})
+
+const resultBodyTitle = computed(() => {
+  const html = resultDialogArticle.value?.rewritten_html || ''
+  if (!html || typeof DOMParser === 'undefined') return ''
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return (doc.querySelector('h1, h2, h3')?.textContent || '').replace(/\s+/g, ' ').trim()
 })
 
 const coverAssets = computed(() => {
@@ -1037,6 +1088,51 @@ function viewDraft(draftId) {
   ElMessage.info(`草稿 ID: ${draftId}`)
 }
 
+async function copyTextToClipboard(text, label = '内容') {
+  const value = (text || '').trim()
+  if (!value) {
+    ElMessage.warning(`${label}为空`)
+    return
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+    } else {
+      copyTextBySelection(value)
+    }
+    ElMessage.success(`已复制${label}`)
+  } catch (error) {
+    try {
+      copyTextBySelection(value)
+      ElMessage.success(`已复制${label}`)
+    } catch {
+      ElMessage.error(error.message || `${label}复制失败`)
+    }
+  }
+}
+
+function copyTextBySelection(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    const ok = document.execCommand('copy')
+    if (!ok) {
+      throw new Error('浏览器拒绝复制')
+    }
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 onMounted(() => {
   loadData()
 })
@@ -1378,6 +1474,44 @@ watch(
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.result-copy-title-panel {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.result-copy-title-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 32px;
+}
+
+.result-copy-title-row + .result-copy-title-row {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.result-copy-title-label {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.result-copy-title-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-preview-shell {

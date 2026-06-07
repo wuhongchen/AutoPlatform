@@ -407,6 +407,114 @@ def test_inspiration_article_templates_publish_and_pipeline(client):
     assert {"collect", "rewrite", "publish", "batch"} <= task_names
 
 
+def test_content_flow_runs_link_to_wechat_copy_without_new_data_silo(client):
+    _create_account(
+        client,
+        "acc_content_flow",
+        "Content Flow Account",
+        pipeline_role="tech_expert",
+        content_direction="聚焦 AI 工具落地",
+        prompt_direction="用短句和清晰小标题",
+        wechat_prompt_direction="适合公众号阅读",
+        ad_header_html="<p>Header Ad</p>",
+    )
+
+    flow_resp = client.post(
+        "/api/content-flow/run",
+        json={
+            "url": "https://example.com/content-flow-source",
+            "account_id": "acc_content_flow",
+            "style": "tech_expert",
+            "template": "default",
+            "use_references": False,
+            "instructions": "保留关键结论",
+        },
+    )
+    assert flow_resp.status_code == 202, flow_resp.get_json()
+
+    flow_task = _poll_task(client, flow_resp.get_json()["task_id"])
+    assert flow_task["status"] == "completed", flow_task
+    assert flow_task["name"] == "content_flow"
+    assert flow_task["account_id"] == "acc_content_flow"
+
+    result = flow_task["result"]
+    assert result["ok"] is True
+    assert result["inspiration_id"]
+    assert result["article_id"]
+    assert result["template"] == "default"
+    assert result["copy_ready"] is True
+    assert result["copy_text_length"] > 0
+
+    inspirations = client.get("/api/inspirations?account_id=acc_content_flow").get_json()
+    assert len(inspirations) == 1
+    assert inspirations[0]["id"] == result["inspiration_id"]
+    assert inspirations[0]["source_url"] == "https://example.com/content-flow-source"
+    assert inspirations[0]["article_id"] == result["article_id"]
+
+    article_resp = client.get(f"/api/articles/{result['article_id']}")
+    assert article_resp.status_code == 200
+    article = article_resp.get_json()
+    assert article["status"] == "rewritten"
+    assert article["metadata"]["content_flow"]["inspiration_id"] == result["inspiration_id"]
+    assert "账号内容方向" in article["custom_instructions"]
+    assert "保留关键结论" in article["custom_instructions"]
+
+    copy_resp = client.get(
+        f"/api/articles/{result['article_id']}/wechat-copy",
+        query_string={"template": "business"},
+    )
+    assert copy_resp.status_code == 200, copy_resp.get_json()
+    copy_payload = copy_resp.get_json()
+    assert copy_payload["article_id"] == result["article_id"]
+    assert copy_payload["template"] == "business"
+    assert "Mock Rewritten (tech_expert)" in copy_payload["html"]
+    assert "Header Ad" in copy_payload["html"]
+
+
+def test_content_flow_excludes_current_source_from_auto_references(client):
+    _create_account(client, "acc_reference_filter", "Reference Filter Account")
+
+    flow_resp = client.post(
+        "/api/content-flow/run",
+        json={
+            "url": "https://example.com/current-source",
+            "account_id": "acc_reference_filter",
+            "style": "tech_expert",
+            "template": "default",
+            "use_references": True,
+        },
+    )
+    assert flow_resp.status_code == 202, flow_resp.get_json()
+
+    flow_task = _poll_task(client, flow_resp.get_json()["task_id"])
+    assert flow_task["status"] == "completed", flow_task
+    assert server.manager.ai.calls[-1]["inspiration_records"] == []
+
+
+def test_qr_and_promo_images_are_not_reinserted(client):
+    _create_account(client, "acc_image_filter", "Image Filter Account")
+    _, article = _collect_and_approve(client, "acc_image_filter", "image-filter")
+    article_id = article["id"]
+
+    server.manager.storage.update_article(article_id, {
+        "original_html": """
+            <p>正文截图说明</p>
+            <img src="/local_images/body/img_000.png" alt="产品界面截图" />
+            <p>扫码关注公众号，加入读者群。</p>
+            <img src="/local_images/body/img_001.png" alt="二维码" />
+        """,
+        "images": [
+            "/local_images/body/img_000.png",
+            "/local_images/body/img_001.png",
+        ],
+    })
+
+    article_model = server.manager.storage.get_article(article_id)
+    reusable = server.manager._extract_reusable_article_images(article_model)
+
+    assert [item["src"] for item in reusable] == ["/local_images/body/img_000.png"]
+
+
 def test_collected_inspiration_hidden_styles_are_sanitized(client):
     _create_account(client, "acc_hidden", "Hidden Html Account")
 

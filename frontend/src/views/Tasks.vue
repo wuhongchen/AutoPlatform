@@ -46,6 +46,7 @@
             <el-option label="改写" value="rewrite" />
             <el-option label="发布" value="publish" />
             <el-option label="批量处理" value="batch" />
+            <el-option label="链接成稿" value="content_flow" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -259,6 +260,7 @@ function taskTypeColor(name) {
     rewrite: 'warning',
     publish: 'success',
     batch: 'danger',
+    content_flow: 'primary',
   }
   return map[name] || 'info'
 }
@@ -269,6 +271,7 @@ function taskTypeLabel(name) {
     rewrite: '改写',
     publish: '发布',
     batch: '批量处理',
+    content_flow: '链接成稿',
   }
   return map[name] || name
 }

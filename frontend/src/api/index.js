@@ -70,7 +70,8 @@ export default {
     get: (id) => api.get(`/articles/${id}`),
     update: (id, data) => api.put(`/articles/${id}`, data),
     rewrite: (id, data) => api.post(`/articles/${id}/rewrite`, data),
-    publish: (id, data) => api.post(`/articles/${id}/publish`, data)
+    publish: (id, data) => api.post(`/articles/${id}/publish`, data),
+    wechatCopy: (id, params) => api.get(`/articles/${id}/wechat-copy`, { params })
   },
 
   // 素材库
@@ -129,5 +130,10 @@ export default {
     get: (id) => api.get(`/tasks/${id}`),
     create: (data) => api.post('/tasks', data),
     delete: (id) => api.delete(`/tasks/${id}`)
+  },
+
+  // 链接成稿
+  contentFlow: {
+    run: (data) => api.post('/content-flow/run', data)
   }
 }
