@@ -10,6 +10,7 @@ from .task import Task, TaskStatus, TaskName
 from .inspiration import InspirationRecord, InspirationStatus
 from .style_preset import StylePreset, WritingTone, WritingStyle
 from .image_asset import ImageAsset, ImageAssetSource
+from .ai_config import AIModelConfig, BUILTIN_AI_CONFIGS
 
 __all__ = [
     "Account",
@@ -25,6 +26,8 @@ __all__ = [
     "WritingStyle",
     "ImageAsset",
     "ImageAssetSource",
+    "AIModelConfig",
+    "BUILTIN_AI_CONFIGS",
     "Task",
     "TaskStatus",
     "TaskName",

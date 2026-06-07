@@ -647,6 +647,69 @@ def run_content_flow():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+# ============ AI 模型配置管理 ============
+
+@app.route("/api/ai-configs", methods=["GET"])
+def list_ai_configs():
+    configs = manager.list_ai_configs()
+    return jsonify(configs)
+
+
+@app.route("/api/ai-configs", methods=["POST"])
+def create_ai_config():
+    data = request.json or {}
+    if not data.get("id"):
+        return jsonify({"error": "配置 ID 不能为空"}), 400
+    try:
+        config = manager.create_ai_config(data)
+        return jsonify(config), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/ai-configs/<config_id>", methods=["GET"])
+def get_ai_config(config_id):
+    config = manager.get_ai_config(config_id)
+    if not config:
+        return jsonify({"error": "配置不存在"}), 404
+    return jsonify(config)
+
+
+@app.route("/api/ai-configs/<config_id>", methods=["PUT"])
+def update_ai_config(config_id):
+    data = request.json or {}
+    success = manager.update_ai_config(config_id, data)
+    if not success:
+        return jsonify({"error": "更新失败或配置不存在"}), 400
+    return jsonify({"success": True})
+
+
+@app.route("/api/ai-configs/<config_id>", methods=["DELETE"])
+def delete_ai_config(config_id):
+    success = manager.delete_ai_config(config_id)
+    if not success:
+        return jsonify({"error": "删除失败或配置不存在"}), 400
+    return jsonify({"success": True})
+
+
+@app.route("/api/ai-configs/<config_id>/set-default", methods=["POST"])
+def set_default_ai_config(config_id):
+    success = manager.set_default_ai_config(config_id)
+    if not success:
+        return jsonify({"error": "设置失败或配置不存在"}), 400
+    return jsonify({"success": True})
+
+
+@app.route("/api/ai-configs/<config_id>/test", methods=["POST"])
+def test_ai_config(config_id):
+    import asyncio
+    try:
+        result = asyncio.run(manager.test_ai_config(config_id))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})

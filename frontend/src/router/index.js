@@ -60,6 +60,12 @@ const routes = [
         name: 'Tasks',
         component: () => import('../views/Tasks.vue'),
         meta: { title: '任务看板', icon: 'List' }
+      },
+      {
+        path: 'ai-settings',
+        name: 'AISettings',
+        component: () => import('../views/AISettings.vue'),
+        meta: { title: 'AI 设置', icon: 'Cpu' }
       }
     ]
   },

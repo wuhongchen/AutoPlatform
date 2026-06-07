@@ -135,5 +135,16 @@ export default {
   // 链接成稿
   contentFlow: {
     run: (data) => api.post('/content-flow/run', data)
+  },
+
+  // AI 模型配置
+  aiConfigs: {
+    list: () => api.get('/ai-configs'),
+    get: (id) => api.get(`/ai-configs/${id}`),
+    create: (data) => api.post('/ai-configs', data),
+    update: (id, data) => api.put(`/ai-configs/${id}`, data),
+    delete: (id) => api.delete(`/ai-configs/${id}`),
+    setDefault: (id) => api.post(`/ai-configs/${id}/set-default`),
+    test: (id) => api.post(`/ai-configs/${id}/test`)
   }
 }

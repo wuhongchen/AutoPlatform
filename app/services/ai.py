@@ -47,31 +47,62 @@ class AIService:
     def __init__(self):
         settings = get_settings()
         self.config = settings.ai
+        self.logger = get_logger("ai")
+        self._model_config = self._load_model_config()
+        self._rebuild_clients()
+
+    def _load_model_config(self) -> Optional[Dict]:
+        """从数据库加载当前默认模型配置，失败则回退 .env"""
+        try:
+            from app.services.storage import StorageService
+            db_config = StorageService().get_default_ai_config()
+            if db_config and db_config.get("api_key"):
+                self.logger.info(
+                    f"[ai] loaded model from db: {db_config['name']} ({db_config['model']})"
+                )
+                return db_config
+        except Exception as e:
+            self.logger.warning(f"[ai] failed to load db model config: {e}")
+        return None
+
+    def _rebuild_clients(self):
+        """基于当前配置重建 API 客户端"""
+        if self._model_config:
+            api_key = self._model_config["api_key"]
+            endpoint = self._model_config.get("endpoint", "")
+            model = self._model_config.get("model", "")
+            timeout_val = self._model_config.get("timeout", self.config.timeout)
+        else:
+            api_key = self.config.api_key
+            endpoint = self.config.endpoint
+            model = self.config.model
+            timeout_val = self.config.timeout
+
         timeout = httpx.Timeout(
-            connect=min(30, self.config.timeout),
-            read=self.config.timeout,
-            write=self.config.timeout,
-            pool=self.config.timeout,
+            connect=min(30, timeout_val),
+            read=timeout_val,
+            write=timeout_val,
+            pool=timeout_val,
         )
-        self._use_ark_responses = self._should_use_ark_responses()
+        self._current_model = model
+        self._use_ark_responses = self._should_use_ark_responses_db(endpoint)
         self.ark_client = None
         if self._use_ark_responses:
             self.ark_client = Ark(
-                api_key=self.config.api_key,
-                base_url=self.config.endpoint,
+                api_key=api_key,
+                base_url=endpoint,
                 timeout=timeout,
             )
         self.client = openai.AsyncOpenAI(
-            api_key=self.config.api_key,
-            base_url=self.config.endpoint,
+            api_key=api_key,
+            base_url=endpoint,
             timeout=timeout
         )
-        self.logger = get_logger("ai")
 
-    def _should_use_ark_responses(self) -> bool:
-        provider = (self.config.provider or "").strip().lower()
-        endpoint = (self.config.endpoint or "").strip().lower()
-        return provider in {"ark", "volcengine", "volces"} and "volces.com/api/v3" in endpoint
+    def _should_use_ark_responses_db(self, endpoint: str = "") -> bool:
+        """判断是否使用 Ark Responses API"""
+        ep = (endpoint or self.config.endpoint or "").strip().lower()
+        return "volces.com/api/v3" in ep
 
     async def _call_llm(
         self,
@@ -86,7 +117,7 @@ class AIService:
         """
         start_time = time.time()
         self.logger.info(
-            f"[{task_name}] LLM request | model={self.config.model} "
+            f"[{task_name}] LLM request | model={self._current_model} "
             f"temp={temperature} max_tokens={max_tokens} "
             f"sys_len={len(system_prompt)} usr_len={len(user_prompt)}"
         )
@@ -95,7 +126,7 @@ class AIService:
             if self._use_ark_responses:
                 response = await asyncio.to_thread(
                     self.ark_client.responses.create,
-                    model=self.config.model,
+                    model=self._current_model,
                     instructions=system_prompt,
                     input=[
                         {
@@ -116,7 +147,7 @@ class AIService:
                 content = self._extract_ark_response_text(response)
             else:
                 response = await self.client.chat.completions.create(
-                    model=self.config.model,
+                    model=self._current_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

@@ -40,6 +40,7 @@ class AppManager:
         self.collector = CollectorService()
         self.image = ImageService()
         self._init_builtin_presets()
+        self._init_builtin_ai_configs()
         self._repair_collected_html()
         self._repair_task_account_bindings()
         self._init_executor()
@@ -1233,3 +1234,69 @@ class AppManager:
     
     def get_stats(self, account_id: Optional[str] = None) -> Dict:
         return self.storage.get_stats(account_id)
+
+    # ─── AI 模型配置管理 ───────────────────────────────────────────
+
+    def _init_builtin_ai_configs(self):
+        """初始化内置 AI 配置预设"""
+        try:
+            settings = get_settings()
+            api_key = settings.ai.api_key or ""
+            self.storage.init_builtin_ai_configs(api_key)
+        except Exception as e:
+            logger.warning(f"[ai_config] init builtin configs warning: {e}")
+
+    def list_ai_configs(self) -> List[Dict]:
+        return self.storage.list_ai_configs()
+
+    def get_ai_config(self, config_id: str) -> Optional[Dict]:
+        return self.storage.get_ai_config(config_id)
+
+    def create_ai_config(self, data: Dict) -> Dict:
+        return self.storage.create_ai_config(data)
+
+    def update_ai_config(self, config_id: str, data: Dict) -> bool:
+        return self.storage.update_ai_config(config_id, data)
+
+    def delete_ai_config(self, config_id: str) -> bool:
+        return self.storage.delete_ai_config(config_id)
+
+    def set_default_ai_config(self, config_id: str) -> bool:
+        return self.storage.set_default_ai_config(config_id)
+
+    async def test_ai_config(self, config_id: str) -> Dict:
+        """测试 AI 配置连接"""
+        import time
+        config = self.storage.get_ai_config(config_id)
+        if not config:
+            raise Exception("配置不存在")
+        if not config.get("api_key"):
+            raise Exception("API Key 未配置")
+
+        import openai
+        client = openai.AsyncOpenAI(
+            api_key=config["api_key"],
+            base_url=config.get("endpoint", "https://api.deepseek.com/v1"),
+            timeout=20,
+        )
+        start = time.time()
+        try:
+            response = await client.chat.completions.create(
+                model=config["model"],
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=10,
+            )
+            elapsed = round((time.time() - start) * 1000)
+            return {
+                "success": True,
+                "latency_ms": elapsed,
+                "model": config["model"],
+                "response": response.choices[0].message.content.strip(),
+            }
+        except Exception as e:
+            elapsed = round((time.time() - start) * 1000)
+            return {
+                "success": False,
+                "latency_ms": elapsed,
+                "error": str(e),
+            }

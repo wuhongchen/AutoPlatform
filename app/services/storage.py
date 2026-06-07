@@ -216,6 +216,24 @@ class StorageService:
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # AI 模型配置表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ai_configs (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL DEFAULT '',
+                    provider TEXT DEFAULT 'custom',
+                    api_key TEXT DEFAULT '',
+                    endpoint TEXT DEFAULT '',
+                    model TEXT DEFAULT '',
+                    is_active INTEGER DEFAULT 1,
+                    is_default INTEGER DEFAULT 0,
+                    timeout INTEGER DEFAULT 240,
+                    metadata TEXT DEFAULT '{}',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             self._ensure_articles_schema(conn)
             self._ensure_accounts_schema(conn)
 
@@ -960,3 +978,107 @@ class StorageService:
             query += " GROUP BY status"
             rows = conn.execute(query, params).fetchall()
             return {row["status"]: row["count"] for row in rows}
+
+    # ─── AI 模型配置 CRUD ───────────────────────────────────────────
+
+    def list_ai_configs(self) -> List[Dict]:
+        """列出所有 AI 模型配置"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM ai_configs ORDER BY is_default DESC, created_at DESC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_ai_config(self, config_id: str) -> Optional[Dict]:
+        """获取单个 AI 模型配置"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM ai_configs WHERE id = ?", (config_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def create_ai_config(self, data: Dict) -> Dict:
+        """创建 AI 模型配置"""
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO ai_configs (id, name, provider, api_key, endpoint, model,
+                   is_active, is_default, timeout, metadata, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (
+                    data["id"],
+                    data.get("name", ""),
+                    data.get("provider", "custom"),
+                    data.get("api_key", ""),
+                    data.get("endpoint", ""),
+                    data.get("model", ""),
+                    int(data.get("is_active", True)),
+                    int(data.get("is_default", False)),
+                    int(data.get("timeout", 240)),
+                    json.dumps(data.get("metadata", {})),
+                ),
+            )
+            return self.get_ai_config(data["id"])
+
+    def update_ai_config(self, config_id: str, data: Dict) -> bool:
+        """更新 AI 模型配置"""
+        updates = []
+        params = []
+        for key in ["name", "provider", "api_key", "endpoint", "model", "timeout"]:
+            if key in data:
+                updates.append(f"{key} = ?")
+                params.append(data[key])
+        for key in ["is_active", "is_default"]:
+            if key in data:
+                updates.append(f"{key} = ?")
+                params.append(int(data[key]))
+        if "metadata" in data:
+            updates.append("metadata = ?")
+            params.append(json.dumps(data["metadata"]))
+        if not updates:
+            return False
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(config_id)
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE ai_configs SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            return cursor.rowcount > 0
+
+    def delete_ai_config(self, config_id: str) -> bool:
+        """删除 AI 模型配置"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM ai_configs WHERE id = ?", (config_id,)
+            )
+            return cursor.rowcount > 0
+
+    def set_default_ai_config(self, config_id: str) -> bool:
+        """设为默认配置，同时取消其他默认"""
+        with self._get_connection() as conn:
+            conn.execute("UPDATE ai_configs SET is_default = 0")
+            cursor = conn.execute(
+                "UPDATE ai_configs SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (config_id,),
+            )
+            return cursor.rowcount > 0
+
+    def get_default_ai_config(self) -> Optional[Dict]:
+        """获取当前默认 AI 配置"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM ai_configs WHERE is_active = 1 AND is_default = 1 LIMIT 1"
+            ).fetchone()
+            return dict(row) if row else None
+
+    def init_builtin_ai_configs(self, api_key: str = ""):
+        """初始化内置 AI 配置预设（不存在时创建）"""
+        from app.models.ai_config import BUILTIN_AI_CONFIGS
+        existing = {row["id"] for row in self.list_ai_configs()}
+        for preset in BUILTIN_AI_CONFIGS:
+            if preset["id"] in existing:
+                continue
+            self.create_ai_config({
+                **preset,
+                "api_key": api_key,
+            })
