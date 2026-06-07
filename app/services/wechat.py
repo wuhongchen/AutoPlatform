@@ -227,3 +227,31 @@ class WechatService:
         """获取可用模板列表"""
         from app.templates import TemplateRegistry
         return TemplateRegistry.list_templates()
+    def get_published_list(self, offset: int = 0, count: int = 20) -> dict:
+        """获取已发布文章列表"""
+        token = self._get_access_token()
+        url = f"{self.API_BASE}/freepublish/batchget"
+        resp = requests.post(
+            url,
+            params={"access_token": token},
+            json={"offset": offset, "count": count, "no_content": 1},
+            timeout=30,
+        )
+        data = resp.json()
+        if "errcode" in data and data["errcode"] != 0:
+            raise Exception(f"微信API错误: {data.get('errmsg', data)}")
+        items = []
+        for item in data.get("item", []):
+            article = item.get("content", {}).get("news_item", [{}])[0] if item.get("content", {}).get("news_item") else {}
+            items.append({
+                "article_id": item.get("article_id", ""),
+                "title": article.get("title", ""),
+                "author": article.get("author", ""),
+                "url": article.get("url", ""),
+                "publish_time": item.get("publish_time", ""),
+                "update_time": item.get("update_time", ""),
+            })
+        return {
+            "total": data.get("total_count", 0),
+            "items": items,
+        }

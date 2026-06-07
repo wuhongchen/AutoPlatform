@@ -9,7 +9,7 @@ const routes = [
     children: [
       // ── 概览 ──
       {
-        path: 'dashboard',
+        path: '/dashboard',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),
         meta: { title: '概览', icon: 'HomeFilled' }
@@ -40,6 +40,12 @@ const routes = [
             meta: { title: '我的文章', icon: 'Document' }
           },
           {
+            path: '/published',
+            name: 'Published',
+            component: () => import('../views/Published.vue'),
+            meta: { title: '已发文章', icon: 'CircleCheck' }
+          },
+          {
             path: '/records',
             name: 'Records',
             component: () => import('../views/Records.vue'),
@@ -64,7 +70,19 @@ const routes = [
             path: '/inspirations',
             name: 'Inspirations',
             component: () => import('../views/Inspirations.vue'),
-            meta: { title: '素材库', icon: 'Collection' }
+            meta: { title: '文章素材', icon: 'Collection' }
+          },
+          {
+            path: '/wechat-radar',
+            name: 'WechatRadar',
+            component: () => import('../views/WechatRadar.vue'),
+            meta: { title: '公众号雷达', icon: 'Monitor' }
+          },
+          {
+            path: '/image-assets',
+            name: 'ImageAssets',
+            component: () => import('../views/ImageAssets.vue'),
+            meta: { title: '图片素材', icon: 'Picture' }
           }
         ]
       },
@@ -102,6 +120,12 @@ const routes = [
         name: 'Accounts',
         component: () => import('../views/Accounts.vue'),
         meta: { title: '账户管理', icon: 'UserFilled' }
+      },
+      {
+        path: '/account-settings',
+        name: 'AccountSettings',
+        component: () => import('../views/AccountSettings.vue'),
+        meta: { title: '账号设置', icon: 'Setting' }
       }
     ]
   },

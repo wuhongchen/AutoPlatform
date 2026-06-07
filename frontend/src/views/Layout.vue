@@ -44,15 +44,15 @@
           <!-- 普通菜单项 -->
           <router-link
             v-else
-            :to="'/' + route.path"
+            :to="route.path"
             class="nav-item"
-            :class="{ active: $route.path === '/' + route.path }"
+            :class="{ active: $route.path === route.path }"
           >
             <el-icon class="nav-icon">
               <component :is="iconMap[route.meta.icon]" />
             </el-icon>
             <span class="nav-label">{{ route.meta.title }}</span>
-            <span v-if="$route.path === '/' + route.path" class="nav-dot" />
+            <span v-if="$route.path === route.path" class="nav-dot" />
           </router-link>
         </template>
       </div>
@@ -106,8 +106,9 @@
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  HomeFilled, UserFilled, Document, MagicStick,
-  Collection, BrushFilled, List, Link, Cpu, Connection
+  HomeFilled, UserFilled, Document, MagicStick, CircleCheck,
+  Collection, BrushFilled, List, Link, Cpu, Connection,
+  Monitor, Picture, Setting
 } from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 
@@ -116,8 +117,9 @@ const accountStore = useAccountStore()
 const appStore = useAppStore()
 
 const iconMap = {
-  HomeFilled, UserFilled, Document, MagicStick,
-  Collection, BrushFilled, List, Link, Cpu, Connection
+  HomeFilled, UserFilled, Document, MagicStick, CircleCheck,
+  Collection, BrushFilled, List, Link, Cpu, Connection,
+  Monitor, Picture, Setting
 }
 
 const menuRoutes = computed(() => {
