@@ -1365,6 +1365,40 @@ class AppManager:
         except Exception:
             return ""
 
+    def sync_published_articles(self, account_id: str) -> Dict:
+        """从微信同步已发布文章到数据库"""
+        account = self.storage.get_account(account_id)
+        if not account or not account.wechat_appid:
+            raise Exception("账户未配置微信凭证")
+
+        from app.services.wechat import WechatService
+        wechat = WechatService(account.wechat_appid, account.wechat_secret)
+        result = wechat.get_published_list(count=20)
+        synced = 0
+        for item in result.get("items", []):
+            url = item.get("url", "")
+            if not url:
+                continue
+            existing = self.storage.find_inspiration_by_url(url)
+            if existing:
+                continue
+            import uuid
+            record = InspirationRecord(
+                id=f"pub_{uuid.uuid4().hex[:12]}",
+                source_url=url,
+                source_type="wechat_published",
+                source_account=account.name or account_id,
+                title=item.get("title", "") or "无标题",
+                author=item.get("author", ""),
+                content="",
+                content_html="",
+                status=InspirationStatus.COLLECTED,
+                account_id=account_id,
+            )
+            self.storage.create_inspiration(record)
+            synced += 1
+        return {"synced": synced, "total": result.get("total", 0)}
+
     def get_stats(self, account_id: Optional[str] = None) -> Dict:
         return self.storage.get_stats(account_id)
 

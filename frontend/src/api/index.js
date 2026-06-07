@@ -71,7 +71,8 @@ export default {
     update: (id, data) => api.put(`/articles/${id}`, data),
     rewrite: (id, data) => api.post(`/articles/${id}/rewrite`, data),
     publish: (id, data) => api.post(`/articles/${id}/publish`, data),
-    wechatCopy: (id, params) => api.get(`/articles/${id}/wechat-copy`, { params })
+    wechatCopy: (id, params) => api.get(`/articles/${id}/wechat-copy`, { params }),
+    syncPublished: (data) => api.post('/articles/sync-published', data)
   },
 
   // 素材库

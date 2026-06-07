@@ -767,6 +767,18 @@ def toggle_feed(feed_id):
         return jsonify({"error": "操作失败"}), 400
     return jsonify({"success": True})
 
+
+@app.route("/api/articles/sync-published", methods=["POST"])
+def sync_published_articles():
+    """从微信同步已发布文章"""
+    data = request.json or {}
+    account_id = data.get("account_id", "default")
+    try:
+        result = manager.sync_published_articles(account_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})
