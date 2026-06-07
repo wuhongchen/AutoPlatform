@@ -1,39 +1,69 @@
 <template>
   <el-container class="layout-container">
-    <!-- 侧边栏 -->
-    <el-aside width="240px" class="sidebar">
-      <div class="logo">
-        <el-icon :size="28" color="#4f46e5"><Cpu /></el-icon>
-        <span>公众号自动发布系统</span>
+    <!-- 暗色侧边栏 -->
+    <el-aside width="260px" class="sidebar">
+      <!-- Logo 区 -->
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect width="28" height="28" rx="8" fill="url(#brand-grad)"/>
+            <path d="M7 10h14M7 14h10M7 18h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+            <defs>
+              <linearGradient id="brand-grad" x1="0" y1="0" x2="28" y2="28">
+                <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">AutoPlatform</span>
+          <span class="brand-desc">公众号内容后台</span>
+        </div>
       </div>
-      
-      <el-menu
-        :default-active="$route.path"
-        router
-        class="nav-menu"
-        background-color="transparent"
-        text-color="#64748b"
-        active-text-color="#4f46e5"
-      >
-        <el-menu-item v-for="route in menuRoutes" :key="route.path" :index="'/' + route.path">
-          <el-icon>
+
+      <!-- 导航菜单 -->
+      <div class="sidebar-nav">
+        <router-link
+          v-for="route in menuRoutes"
+          :key="route.path"
+          :to="'/' + route.path"
+          class="nav-item"
+          :class="{ active: $route.path === '/' + route.path }"
+        >
+          <el-icon class="nav-icon">
             <component :is="iconMap[route.meta.icon]" />
           </el-icon>
-          <span>{{ route.meta.title }}</span>
-        </el-menu-item>
-      </el-menu>
+          <span class="nav-label">{{ route.meta.title }}</span>
+          <span v-if="$route.path === '/' + route.path" class="nav-dot" />
+        </router-link>
+      </div>
+
+      <!-- 底部信息 -->
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <el-avatar :size="32" style="background: #6366f1;">AP</el-avatar>
+          <div class="user-info">
+            <div class="user-name">AutoPlatform</div>
+            <div class="user-version">v2.1.0</div>
+          </div>
+        </div>
+      </div>
     </el-aside>
 
     <!-- 主内容区 -->
-    <el-container>
+    <el-container class="main-area">
+      <!-- 顶部栏 -->
       <el-header class="header">
-        <h2>{{ $route.meta.title }}</h2>
-        <div class="header-actions">
+        <div class="header-left">
+          <span class="header-title">{{ $route.meta.title }}</span>
+        </div>
+        <div class="header-right">
           <el-select
             v-model="selectedAccountModel"
             placeholder="选择账户"
-            size="small"
+            size="default"
             class="account-switcher"
+            :popper-class="'account-dropdown'"
           >
             <el-option
               v-for="acc in accountStore.accounts"
@@ -44,7 +74,8 @@
           </el-select>
         </div>
       </el-header>
-      
+
+      <!-- 内容 -->
       <el-main class="main-content">
         <router-view />
       </el-main>
@@ -56,8 +87,8 @@
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  Cpu, HomeFilled, UserFilled, Document, MagicStick,
-  Collection, BrushFilled, List, Link
+  HomeFilled, UserFilled, Document, MagicStick,
+  Collection, BrushFilled, List, Link, Cpu
 } from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 
@@ -66,8 +97,8 @@ const accountStore = useAccountStore()
 const appStore = useAppStore()
 
 const iconMap = {
-  Cpu, HomeFilled, UserFilled, Document, MagicStick,
-  Collection, BrushFilled, List, Link
+  HomeFilled, UserFilled, Document, MagicStick,
+  Collection, BrushFilled, List, Link, Cpu
 }
 
 const menuRoutes = computed(() => {
@@ -85,7 +116,6 @@ onMounted(async () => {
     appStore.setSelectedAccount('')
     return
   }
-
   if (!appStore.selectedAccountId || !accounts.some(acc => acc.account_id === appStore.selectedAccountId)) {
     appStore.setSelectedAccount(accounts[0].account_id)
   }
@@ -93,71 +123,162 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* === 整体布局 === */
 .layout-container {
   height: 100vh;
 }
 
+/* === 侧边栏 === */
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e2e8f0;
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.logo {
-  height: 64px;
+.sidebar-brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 20px;
-  border-bottom: 1px solid #e2e8f0;
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-.logo span {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1e293b;
+.brand-icon {
+  flex-shrink: 0;
 }
 
-.nav-menu {
-  border-right: none;
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.brand-desc {
+  font-size: 11px;
+  color: var(--text-sidebar);
+  letter-spacing: 0.02em;
+}
+
+/* === 导航 === */
+.sidebar-nav {
+  flex: 1;
   padding: 16px 12px;
+  overflow-y: auto;
 }
 
-.nav-menu :deep(.el-menu-item) {
-  border-radius: 8px;
-  margin-bottom: 4px;
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  color: var(--text-sidebar);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 2px;
+  position: relative;
+  transition: all 0.15s ease;
 }
 
-.nav-menu :deep(.el-menu-item.is-active) {
-  background: #eef2ff;
+.nav-item:hover {
+  background: var(--bg-sidebar-hover);
+  color: #fff;
 }
 
+.nav-item.active {
+  background: var(--bg-sidebar-active);
+  color: var(--text-sidebar-active);
+}
+
+.nav-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  white-space: nowrap;
+}
+
+.nav-dot {
+  position: absolute;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* === 侧边栏底部 === */
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.user-version {
+  font-size: 11px;
+  color: var(--text-sidebar);
+  margin-top: 1px;
+}
+
+/* === 主区域 === */
+.main-area {
+  background: var(--bg-page);
+}
+
+/* === 顶部栏 === */
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 28px;
+  height: 60px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
 }
 
-.header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #1e293b;
+.header-title {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
-.header-actions {
+.header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .account-switcher {
-  width: 260px;
+  width: 280px;
 }
 
+/* === 内容区 === */
 .main-content {
-  background: #f1f5f9;
-  padding: 24px;
+  padding: 24px 28px;
   overflow-y: auto;
+  min-height: 0;
 }
 </style>

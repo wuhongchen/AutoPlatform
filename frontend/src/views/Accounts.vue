@@ -596,7 +596,7 @@ watch(
   font-size: 18px;
   line-height: 1.3;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .accounts-toolbar-badge {
@@ -605,7 +605,7 @@ watch(
   padding: 4px 10px;
   border-radius: 999px;
   background: #eff6ff;
-  color: #2563eb;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
 }
@@ -614,11 +614,11 @@ watch(
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.6;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .accounts-toolbar-current {
-  color: #334155;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -627,7 +627,7 @@ watch(
 }
 
 .text-gray-400 {
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .ad-cell {
@@ -651,14 +651,14 @@ watch(
 .ad-dialog-title {
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .account-guide {
   margin-bottom: 16px;
   padding: 12px 14px;
   border: 1px solid #dbeafe;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: #f8fbff;
 }
 
@@ -672,7 +672,7 @@ watch(
 .account-guide-text {
   font-size: 13px;
   line-height: 1.7;
-  color: #475569;
+  color: var(--text-secondary);
 }
 
 .form-tip {
@@ -680,13 +680,13 @@ watch(
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.6;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .ad-dialog-subtitle {
   margin-top: 4px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .ad-layout {
@@ -698,15 +698,15 @@ watch(
 .ad-form-panel,
 .ad-preview-panel {
   padding: 16px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
   background: #f8fafc;
 }
 
 .ad-preview-title {
   font-size: 13px;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 

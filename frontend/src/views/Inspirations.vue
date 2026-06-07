@@ -657,12 +657,12 @@ watch(activeTab, (tab) => {
 
 .image-toolbar-tip {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .inspiration-title {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-primary);
 }
 
 .inspiration-tags {
@@ -677,8 +677,8 @@ watch(activeTab, (tab) => {
 
 .image-card {
   overflow: hidden;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: #fff;
 }
 
@@ -701,10 +701,9 @@ watch(activeTab, (tab) => {
 .image-card-title {
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   line-height: 1.5;
 }
-
 .image-card-meta {
   margin-top: 8px;
   display: flex;
@@ -712,17 +711,15 @@ watch(activeTab, (tab) => {
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
-
 .image-card-prompt {
   margin-top: 8px;
   font-size: 12px;
   line-height: 1.6;
-  color: #475569;
+  color: var(--text-secondary);
   min-height: 38px;
 }
-
 .image-card-actions {
   display: flex;
   gap: 8px;
@@ -741,57 +738,48 @@ watch(activeTab, (tab) => {
   gap: 24px;
   align-items: start;
 }
-
 .detail-meta-panel {
   padding: 20px;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
   position: sticky;
   top: 0;
 }
-
 .detail-meta-eyebrow {
   font-size: 12px;
-  color: #2563eb;
+  color: var(--accent);
   font-weight: 600;
-  letter-spacing: 0;
 }
-
 .detail-title {
   margin: 12px 0 0;
   font-size: 24px;
   line-height: 1.4;
-  color: #0f172a;
+  color: var(--text-primary);
 }
-
 .detail-meta-row {
   display: grid;
   gap: 12px;
   margin-top: 20px;
 }
-
 .detail-meta-item {
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.86);
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
 }
-
 .detail-meta-label {
   display: block;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-bottom: 4px;
 }
-
 .detail-meta-value {
   display: block;
   font-size: 14px;
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 600;
 }
-
 .detail-source-actions {
   margin-top: 18px;
 }
@@ -802,7 +790,6 @@ watch(activeTab, (tab) => {
   background: linear-gradient(180deg, #eef4ff 0%, #f8fafc 100%);
   border: 1px solid #dbeafe;
 }
-
 .detail-preview-device {
   max-width: 520px;
   margin: 0 auto;
@@ -812,7 +799,6 @@ watch(activeTab, (tab) => {
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
   overflow: hidden;
 }
-
 .detail-preview-header {
   display: flex;
   align-items: center;
@@ -821,12 +807,10 @@ watch(activeTab, (tab) => {
   border-bottom: 1px solid #eef2f7;
   background: #f8fafc;
 }
-
 .detail-preview-dots {
   display: flex;
   gap: 6px;
 }
-
 .detail-preview-dots span {
   width: 8px;
   height: 8px;
@@ -834,80 +818,64 @@ watch(activeTab, (tab) => {
   background: #cbd5e1;
   display: inline-block;
 }
-
 .detail-preview-caption {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .detail-article {
   background: #fff;
 }
-
 .detail-article-header {
   padding: 24px 24px 16px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
 }
-
 .detail-article-header h1 {
   margin: 0;
   font-size: 28px;
   line-height: 1.42;
-  color: #111827;
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .article-content {
   padding: 0 24px 28px;
   font-size: 17px;
-  color: #1f2937;
+  color: var(--text-primary);
   background: #fff;
 }
-
-.article-content :deep(section) {
-  margin: 0 0 1.15em;
-}
-
-.article-content :deep(p) {
-  margin: 0 0 1.15em;
-  line-height: 1.95;
-  color: #1f2937;
-}
-
+.article-content :deep(section) { margin: 0 0 1.15em; }
+.article-content :deep(p) { margin: 0 0 1.15em; line-height: 1.95; color: var(--text-primary); }
 .article-content :deep(h1),
 .article-content :deep(h2),
 .article-content :deep(h3) {
   margin: 1.35em 0 0.75em;
   line-height: 1.45;
-  color: #0f172a;
+  color: var(--text-primary);
 }
-
 .article-content :deep(h2) {
   padding: 10px 14px 10px 16px;
   font-size: 21px;
   font-weight: 700;
   border-left: 4px solid #3b82f6;
-  border-radius: 0 12px 12px 0;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   background: linear-gradient(90deg, #eff6ff 0%, #f8fbff 100%);
 }
-
 .article-content :deep(h3) {
   padding-left: 12px;
   font-size: 18px;
   font-weight: 700;
   border-left: 3px solid #cbd5e1;
 }
-
 .article-content :deep(img) {
   display: block;
   width: 100%;
   max-width: 100%;
   height: auto;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   margin: 18px auto;
   background: #f8fafc;
 }
-
 .article-content :deep(blockquote) {
   margin: 1.4em 0;
   padding: 14px 16px;
@@ -915,61 +883,27 @@ watch(activeTab, (tab) => {
   background: #f8fbff;
   color: #334155;
 }
-
 .article-content :deep(ul),
 .article-content :deep(ol) {
   margin: 0 0 1.2em;
   padding-left: 1.4em;
 }
+.article-content :deep(li) { margin-bottom: 0.6em; line-height: 1.9; }
 
-.article-content :deep(li) {
-  margin-bottom: 0.6em;
-  line-height: 1.9;
-}
-
-.text-gray-500 {
-  color: #64748b;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
-}
+.text-gray-500 { color: var(--text-secondary); }
+.mb-4 { margin-bottom: 16px; }
 
 @media (max-width: 960px) {
-  .detail-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .detail-meta-panel {
-    position: static;
-  }
-
-  .detail-preview-device {
-    max-width: 100%;
-  }
+  .detail-layout { grid-template-columns: 1fr; }
+  .detail-meta-panel { position: static; }
+  .detail-preview-device { max-width: 100%; }
 }
 
 @media (max-width: 640px) {
-  .detail-preview-shell,
-  .detail-meta-panel {
-    padding: 14px;
-  }
-
-  .detail-title {
-    font-size: 20px;
-  }
-
-  .detail-article-header {
-    padding: 18px 18px 14px;
-  }
-
-  .detail-article-header h1 {
-    font-size: 24px;
-  }
-
-  .article-content {
-    padding: 0 18px 22px;
-    font-size: 16px;
-  }
+  .detail-preview-shell, .detail-meta-panel { padding: 14px; }
+  .detail-title { font-size: 20px; }
+  .detail-article-header { padding: 18px 18px 14px; }
+  .detail-article-header h1 { font-size: 24px; }
+  .article-content { padding: 0 18px 22px; font-size: 16px; }
 }
 </style>

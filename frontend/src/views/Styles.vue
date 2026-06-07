@@ -313,19 +313,18 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
 }
-
 .style-name .name {
   font-weight: 500;
+  color: var(--text-primary);
 }
-
 .style-name .id {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .form-tip {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 </style>

@@ -323,78 +323,56 @@ watch(() => appStore.selectedAccountId, () => loadTasks())
 
 <style scoped>
 .stats-row {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
-
 .stat-card {
   text-align: center;
-  padding: 8px 0;
-  border-radius: 12px;
+  padding: 4px 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  transition: box-shadow 0.2s;
 }
-
-.stat-card :deep(.el-card__body) {
-  padding: 16px;
+.stat-card:deep(.el-card__body) {
+  padding: 20px 16px;
 }
-
 .stat-value {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1.2;
+  letter-spacing: -0.02em;
 }
-
 .stat-label {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
-
-.stat-pending .stat-value { color: #f59e0b; }
-.stat-completed .stat-value { color: #10b981; }
-.stat-failed .stat-value { color: #ef4444; }
-.stat-total .stat-value { color: #6366f1; }
+.stat-pending .stat-value { color: var(--warning); }
+.stat-completed .stat-value { color: var(--success); }
+.stat-failed .stat-value { color: var(--danger); }
+.stat-total .stat-value { color: var(--accent); }
 
 .filter-card {
   margin-bottom: 16px;
 }
-
 .filter-card :deep(.el-card__body) {
   padding: 16px 20px;
 }
-
 .table-card :deep(.el-card__body) {
   padding: 0;
 }
 
-.task-target {
-  font-size: 13px;
-}
-
-.target-id {
-  color: #1e293b;
-  font-weight: 500;
-}
-
+.task-target { font-size: 13px; }
+.target-id { color: var(--text-primary); font-weight: 500; }
 .target-url {
-  color: #64748b;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 300px;
 }
-
-.time-info {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.time-completed {
-  color: #10b981;
-  margin-top: 2px;
-}
-
-.text-gray {
-  color: #94a3b8;
-}
+.time-info { font-size: 12px; color: var(--text-secondary); }
+.time-completed { color: var(--success); margin-top: 2px; }
+.text-gray { color: var(--text-muted); }
 
 .task-detail {
   max-height: 60vh;
@@ -403,43 +381,22 @@ watch(() => appStore.selectedAccountId, () => loadTasks())
 
 .error-block {
   margin-top: 16px;
-  background: #fef2f2;
+  background: var(--danger-light);
   border: 1px solid #fecaca;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px;
 }
+.error-title { font-size: 13px; font-weight: 600; color: var(--danger); margin-bottom: 8px; }
+.error-content { font-size: 12px; color: #7f1d1d; word-break: break-all; white-space: pre-wrap; }
 
-.error-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #dc2626;
-  margin-bottom: 8px;
-}
-
-.error-content {
-  font-size: 12px;
-  color: #7f1d1d;
-  word-break: break-all;
-  white-space: pre-wrap;
-}
-
-.result-block {
-  margin-top: 16px;
-}
-
-.result-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 8px;
-}
-
+.result-block { margin-top: 16px; }
+.result-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
 .result-content {
   background: #f8fafc;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px;
   font-size: 12px;
-  color: #475569;
+  color: var(--text-secondary);
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;

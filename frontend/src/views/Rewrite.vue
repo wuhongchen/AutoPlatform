@@ -493,24 +493,22 @@ watch(() => appStore.selectedAccountId, () => {
   justify-content: space-between;
   gap: 12px;
 }
-
 .article-option-status {
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .article-info {
   margin-bottom: 16px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border);
 }
-
 .article-info h3 {
   margin: 0 0 8px 0;
+  color: var(--text-primary);
 }
-
 .article-info .author {
-  color: #64748b;
+  color: var(--text-secondary);
   margin: 0;
 }
 
@@ -523,7 +521,7 @@ watch(() => appStore.selectedAccountId, () => {
 .rewritten-content {
   background: #f8fafc;
   padding: 20px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   line-height: 1.8;
   max-height: 600px;
   overflow-y: auto;
@@ -547,12 +545,12 @@ watch(() => appStore.selectedAccountId, () => {
 .style-info {
   padding: 12px;
   background: #f8fafc;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .mode-desc {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-top: 8px;
   line-height: 1.5;
 }
@@ -561,25 +559,22 @@ watch(() => appStore.selectedAccountId, () => {
   max-height: 300px;
   overflow-y: auto;
 }
-
 .inspiration-item {
   padding: 8px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
 }
-
 .inspiration-content {
   display: flex;
   flex-direction: column;
 }
-
 .inspiration-content .title {
   font-size: 13px;
   font-weight: 500;
+  color: var(--text-primary);
 }
-
 .inspiration-content .source {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .template-grid {
@@ -587,56 +582,37 @@ watch(() => appStore.selectedAccountId, () => {
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
-
 .template-item {
   padding: 24px;
-  border: 2px solid #e2e8f0;
-  border-radius: 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
 }
-
 .template-item:hover {
-  border-color: #4f46e5;
+  border-color: var(--accent);
 }
-
 .template-item.active {
-  border-color: #4f46e5;
-  background: #eef2ff;
+  border-color: var(--accent);
+  background: var(--accent-light);
 }
-
 .template-item .name {
   font-weight: 500;
   margin-bottom: 4px;
+  color: var(--text-primary);
 }
-
 .template-item .desc {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 :deep(.el-checkbox__label) {
   flex: 1;
 }
 
-.task-running {
-  padding: 20px 0;
-}
-
-.task-hint {
-  text-align: center;
-  color: #64748b;
-  margin-top: 16px;
-  font-size: 14px;
-}
-
-.task-failed {
-  padding: 20px 0;
-}
-
-.task-link {
-  text-align: center;
-  margin-top: 12px;
-}
+.task-running { padding: 20px 0; }
+.task-hint { text-align: center; color: var(--text-secondary); margin-top: 16px; font-size: 14px; }
+.task-failed { padding: 20px 0; }
+.task-link { text-align: center; margin-top: 12px; }
 </style>

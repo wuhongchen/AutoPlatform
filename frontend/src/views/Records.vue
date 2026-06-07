@@ -401,47 +401,43 @@ watch(() => appStore.selectedAccountId, () => {
 
 <style scoped>
 .stats-row {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
-
 .stat-card {
   text-align: center;
-  padding: 8px 0;
-  border-radius: 12px;
+  padding: 4px 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  transition: box-shadow 0.2s;
 }
-
-.stat-card :deep(.el-card__body) {
-  padding: 16px;
+.stat-card:deep(.el-card__body) {
+  padding: 20px 16px;
 }
-
 .stat-value {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1.2;
+  letter-spacing: -0.02em;
 }
-
 .stat-label {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
-
-.stat-rewritten .stat-value { color: #10b981; }
-.stat-published .stat-value { color: #4f46e5; }
-.stat-failed .stat-value { color: #ef4444; }
-.stat-active .stat-value { color: #f59e0b; }
+.stat-rewritten .stat-value { color: var(--success); }
+.stat-published .stat-value { color: var(--accent); }
+.stat-failed .stat-value { color: var(--danger); }
+.stat-active .stat-value { color: var(--warning); }
 
 .filter-card {
   margin-bottom: 16px;
 }
-
 .filter-row {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
 }
-
 .filter-group,
 .filter-actions {
   display: flex;
@@ -452,9 +448,8 @@ watch(() => appStore.selectedAccountId, () => {
 
 .record-title {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
 }
-
 .record-subtitle {
   margin-top: 8px;
   display: flex;
@@ -462,25 +457,22 @@ watch(() => appStore.selectedAccountId, () => {
   align-items: center;
   flex-wrap: wrap;
 }
-
 .record-time {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .task-brief {
   font-size: 12px;
   line-height: 1.6;
 }
-
 .task-time {
   margin-top: 6px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
-
 .task-error {
   margin-top: 6px;
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .record-detail {
@@ -488,20 +480,17 @@ watch(() => appStore.selectedAccountId, () => {
   flex-direction: column;
   gap: 16px;
 }
-
 .detail-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
 }
-
 .detail-title {
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
 }
-
 .detail-meta {
   margin-top: 10px;
   display: flex;
@@ -509,77 +498,66 @@ watch(() => appStore.selectedAccountId, () => {
   align-items: center;
   flex-wrap: wrap;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
-
 .detail-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
-
 .detail-grid {
   margin-top: 4px;
 }
-
 .detail-panel {
   height: 100%;
   padding: 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
 }
-
 .detail-panel-title {
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
 }
-
 .detail-line {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
   font-size: 13px;
-  color: #334155;
+  color: var(--text-primary);
 }
-
 .detail-line code {
   font-size: 12px;
-  color: #475569;
+  color: var(--text-secondary);
 }
-
 .detail-error {
   margin-top: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: #fef2f2;
+  border-radius: var(--radius);
+  background: var(--danger-light);
   border: 1px solid #fecaca;
   color: #b91c1c;
   font-size: 12px;
   line-height: 1.6;
 }
-
 .detail-content-panel {
   padding-bottom: 0;
 }
-
 .detail-content {
   max-height: 56vh;
   overflow: auto;
   padding-right: 8px;
   line-height: 1.8;
-  color: #1e293b;
+  color: var(--text-primary);
 }
-
 .detail-content :deep(h2) {
   margin: 24px 0 12px;
   font-size: 24px;
   line-height: 1.35;
 }
-
 .detail-content :deep(h3) {
   margin: 18px 0 10px;
   font-size: 18px;
