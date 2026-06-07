@@ -66,8 +66,8 @@
           <el-input v-model="form.url" placeholder="https://example.com/feed.xml" />
         </el-form-item>
 
-        <el-form-item label="账户" prop="account_id">
-          <el-select v-model="form.account_id" style="width: 100%">
+        <el-form-item label="所属账户" prop="account_id">
+          <el-select v-if="!isEdit && !appStore.selectedAccountId" v-model="form.account_id" style="width: 100%">
             <el-option
               v-for="acc in accountStore.accounts"
               :key="acc.account_id"
@@ -75,6 +75,11 @@
               :value="acc.account_id"
             />
           </el-select>
+          <div v-else class="account-display">
+            <el-icon><UserFilled /></el-icon>
+            <span>{{ selectedAccountName }}</span>
+            <el-tag size="small" type="info">{{ form.account_id }}</el-tag>
+          </div>
         </el-form-item>
 
         <el-row :gutter="16">
@@ -101,14 +106,19 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, UserFilled } from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 import api from '../api'
 
 const accountStore = useAccountStore()
 const appStore = useAppStore()
+
+const selectedAccountName = computed(() => {
+  const acc = accountStore.accounts.find(a => a.account_id === form.value.account_id)
+  return acc ? acc.name : form.value.account_id
+})
 
 const feeds = ref([])
 const dialogVisible = ref(false)
@@ -142,12 +152,18 @@ async function loadFeeds() {
 
 function openCreateDialog() {
   isEdit.value = false
+  const selectedAccountId = appStore.selectedAccountId
+  const defaultAccountId = selectedAccountId || accountStore.accounts[0]?.account_id || ''
   form.value = {
     name: '',
     url: '',
-    account_id: appStore.selectedAccountId || accountStore.accounts[0]?.account_id || '',
+    account_id: defaultAccountId,
     category: '',
     fetch_interval: 60,
+  }
+  // 如果有选中账户，默认锁定在该账户下
+  if (selectedAccountId) {
+    form.value.account_id = selectedAccountId
   }
   dialogVisible.value = true
 }
@@ -281,4 +297,16 @@ onMounted(async () => {
 .feed-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .form-tip { font-size: 12px; color: var(--text-secondary); margin-left: 8px; }
+
+.account-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+}
 </style>

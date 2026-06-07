@@ -1328,7 +1328,7 @@ class AppManager:
                 author=item.get("author", ""),
                 content=content_text,
                 content_html=content_html,
-                status=InspirationStatus.PENDING_DECISION,
+                status=InspirationStatus.COLLECTED,
                 account_id=feed.get("account_id", "default"),
             )
             self.storage.create_inspiration(record)
