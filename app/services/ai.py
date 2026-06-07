@@ -50,6 +50,7 @@ class AIService:
         self.logger = get_logger("ai")
         self._model_config = self._load_model_config()
         self._rebuild_clients()
+        self._config_version = self._model_config.get('id', '') if self._model_config else ''
 
     def _load_model_config(self) -> Optional[Dict]:
         """从数据库加载当前默认模型配置，失败则回退 .env"""
@@ -104,7 +105,25 @@ class AIService:
         ep = (endpoint or self.config.endpoint or "").strip().lower()
         return "volces.com/api/v3" in ep
 
-    async def _call_llm(
+    def _ensure_fresh_config(self):
+        """每次 AI 调用前检查配置是否变更，自动热切换客户端"""
+        try:
+            latest = self._load_model_config()
+        except Exception:
+            return
+        new_id = latest.get('id', '') if latest else ''
+        if new_id and new_id != self._config_version:
+            self.logger.info(f'[ai] model config changed, hot-switching to: {latest["name"]} ({latest["model"]})')
+            self._model_config = latest
+            self._rebuild_clients()
+            self._config_version = new_id
+        elif not latest and self._config_version:
+            self.logger.info('[ai] no db config, falling back to .env')
+            self._model_config = None
+            self._rebuild_clients()
+            self._config_version = ''
+
+    async def _call_llm(    
         self,
         system_prompt: str,
         user_prompt: str,
@@ -115,6 +134,7 @@ class AIService:
         """
         统一的 LLM 调用入口
         """
+        self._ensure_fresh_config()
         start_time = time.time()
         self.logger.info(
             f"[{task_name}] LLM request | model={self._current_model} "

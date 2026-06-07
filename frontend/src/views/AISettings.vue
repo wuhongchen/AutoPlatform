@@ -42,11 +42,13 @@
             v-if="!config.is_default && config.is_active"
             size="small"
             type="primary"
-            plain
             @click="setDefault(config.id)"
           >
             设为默认
           </el-button>
+          <el-tag v-if="config.is_default" type="primary" effect="dark" size="small" class="default-badge">
+            <el-icon><CircleCheck /></el-icon> 当前默认
+          </el-tag>
           <el-button size="small" @click="openEditDialog(config)">编辑</el-button>
           <el-button size="small" @click="testConfig(config.id)" :loading="testingId === config.id">
             测试
@@ -365,9 +367,16 @@ onMounted(loadConfigs)
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--border-light);
+}
+
+.default-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .test-result {
