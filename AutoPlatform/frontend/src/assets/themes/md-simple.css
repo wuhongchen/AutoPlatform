@@ -1,0 +1,51 @@
+/* MD 简洁主题 - 整合自 doocs/md simple.css */
+
+#output h1 {
+  padding: 0.5em 1em;
+  font-size: 1.4em;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.05);
+}
+
+#output h2 {
+  padding: 0.3em 1.2em;
+  font-size: 1.3em;
+  border-radius: 8px 24px 8px 24px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+#output h3 {
+  padding-left: 12px;
+  font-size: 1.2em;
+  border-radius: 6px;
+  line-height: 2.4em;
+  border-left: 4px solid var(--md-primary-color);
+  background: rgba(71,139,230,0.08);
+}
+
+#output blockquote {
+  font-style: italic;
+  padding: 1em 1em 1em 2em;
+  color: rgba(0,0,0,0.6);
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+  border-top: 1px solid rgba(0,0,0,0.04);
+  border-right: 1px solid rgba(0,0,0,0.04);
+}
+
+#output pre {
+  border: 1px solid rgba(0,0,0,0.04);
+  border-radius: 8px;
+}
+
+#output img {
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.04);
+}
+
+#output ul { list-style: none; padding-left: 1.5em; }
+
+#output hr {
+  height: 1px;
+  border: none;
+  margin: 2em 0;
+  background: linear-gradient(to right, transparent, rgba(0,0,0,0.1), transparent);
+}

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./run.sh install *)",
+      "Bash(.venv/bin/python3 *)",
+      "Bash(/Users/w/Downloads/code/AutoPlatform/.venv/bin/python3 *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8701/admin)",
+      "Bash(curl -s http://127.0.0.1:8701/admin)",
+      "Bash(curl *)",
+      "Bash(git clone *)",
+      "Bash(git rm *)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+/* MD 基础样式 - 整合自 doocs/md */
+:root {
+  --md-primary-color: #478be6;
+  --md-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --md-font-size: 16px;
+  --blockquote-background: rgba(71, 139, 230, 0.05);
+}
+
+#output {
+  font-family: var(--md-font-family);
+  font-size: var(--md-font-size);
+  line-height: 1.75;
+  text-align: left;
+  color: #333;
+}
+
+#output section > :first-child,
+#output container > :first-child {
+  margin-top: 0 !important;
+}
