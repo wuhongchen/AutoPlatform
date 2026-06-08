@@ -56,12 +56,6 @@ const routes = [
             name: 'Published',
             component: () => import('../views/Published.vue'),
             meta: { title: '已发文章', icon: 'CircleCheck' }
-          },
-          {
-            path: '/records',
-            name: 'Records',
-            component: () => import('../views/Records.vue'),
-            meta: { title: 'AI 记录', icon: 'List' }
           }
         ]
       },
@@ -122,6 +116,12 @@ const routes = [
             name: 'AISettings',
             component: () => import('../views/AISettings.vue'),
             meta: { title: 'AI 设置', icon: 'Cpu' }
+          },
+          {
+            path: '/records',
+            name: 'Records',
+            component: () => import('../views/Records.vue'),
+            meta: { title: 'AI 记录', icon: 'List' }
           }
         ]
       },
