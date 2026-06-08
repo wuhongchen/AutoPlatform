@@ -159,5 +159,17 @@ export default {
     delete: (id) => api.delete(`/ai-configs/${id}`),
     setDefault: (id) => api.post(`/ai-configs/${id}/set-default`),
     test: (id) => api.post(`/ai-configs/${id}/test`)
+  },
+
+  // 贴图
+  stickers: {
+    create: (data) => api.post('/stickers/create', data)
+  },
+
+  // 图片托管
+  imageHosting: {
+    upload: (formData) => api.post('/image-hosting/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
   }
 }

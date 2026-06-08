@@ -844,6 +844,28 @@ def tech_source_fetch_all():
         return jsonify({"error": str(e)}), 400
 
 
+
+# ============ 贴图 ============
+
+@app.route("/api/stickers/create", methods=["POST"])
+def create_sticker():
+    """创建贴图"""
+    data = request.json or {}
+    title = data.get("title", "").strip()
+    description = data.get("description", "").strip()
+    account_id = data.get("account_id", "default")
+    images = data.get("images", [])
+    publish = data.get("publish", False)
+    if not title:
+        return jsonify({"error": "标题不能为空"}), 400
+    if not images:
+        return jsonify({"error": "至少需要一张图片"}), 400
+    try:
+        result = manager.create_sticker_post(title, description, account_id, images, publish)
+        return jsonify(result), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})

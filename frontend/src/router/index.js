@@ -28,6 +28,12 @@ const routes = [
             meta: { title: '链接成稿', icon: 'Link' }
           },
           {
+            path: '/sticker-post',
+            name: 'StickerPost',
+            component: () => import('../views/StickerPost.vue'),
+            meta: { title: '贴图发布', icon: 'PictureFilled' }
+          },
+          {
             path: '/rewrite',
             name: 'Rewrite',
             component: () => import('../views/Rewrite.vue'),

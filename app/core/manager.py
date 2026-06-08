@@ -1498,6 +1498,52 @@ class AppManager:
         from app.services.tech_sources import fetch_all_sources
         return fetch_all_sources(account_id, self.storage)
 
+    def create_sticker_post(self, title: str, description: str, account_id: str,
+                           images: List[str], publish: bool = False) -> Dict:
+        """创建贴图"""
+        import uuid
+        from app.templates.sticker import StickerTemplate
+
+        # 渲染贴图 HTML
+        tpl = StickerTemplate()
+        account = self.storage.get_account(account_id)
+        author = account.wechat_author if account else ""
+        html = tpl.render(title=title, description=description, author=author, images=images)
+
+        # 创建文章记录
+        article = Article(
+            id=f"sticker_{uuid.uuid4().hex[:12]}",
+            source_url="",
+            source_title=title,
+            source_author=author,
+            original_content=description,
+            original_html=html,
+            rewritten_html=html,
+            status=ArticleStatus.PUBLISHED if publish else ArticleStatus.PENDING,
+            account_id=account_id,
+        )
+        self.storage.create_article(article)
+
+        if publish and account and account.wechat_appid:
+            try:
+                from app.services.wechat import WechatService
+                wechat = WechatService(account.wechat_appid, account.wechat_secret)
+                draft_id = wechat.create_draft(title=title, content=html, author=author)
+                self.storage.update_article(article.id, {
+                    "wechat_draft_id": draft_id,
+                    "status": ArticleStatus.PUBLISHED,
+                    "published_at": datetime.now(),
+                    "metadata": {"template": "sticker"},
+                })
+            except Exception as e:
+                logger.warning(f"[sticker] publish failed: {e}")
+
+        return {
+            "article_id": article.id,
+            "status": article.status.value if hasattr(article.status, 'value') else article.status,
+            "images_count": len(images),
+        }
+
     def get_stats(self, account_id: Optional[str] = None) -> Dict:
         return self.storage.get_stats(account_id)
 

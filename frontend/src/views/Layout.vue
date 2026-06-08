@@ -108,7 +108,7 @@ import { useRoute } from 'vue-router'
 import {
   HomeFilled, UserFilled, Document, MagicStick, CircleCheck,
   Collection, BrushFilled, List, Link, Cpu, Connection,
-  Monitor, Picture, Setting, Edit
+  Monitor, Picture, PictureFilled, Setting, Edit
 } from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 
@@ -119,7 +119,7 @@ const appStore = useAppStore()
 const iconMap = {
   HomeFilled, UserFilled, Document, MagicStick, CircleCheck,
   Collection, BrushFilled, List, Link, Cpu, Connection,
-  Monitor, Picture, Setting, Edit
+  Monitor, Picture, PictureFilled, Setting, Edit
 }
 
 const menuRoutes = computed(() => {
