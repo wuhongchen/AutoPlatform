@@ -861,12 +861,16 @@ def create_sticker():
     account_id = data.get("account_id", "default")
     images = data.get("images", [])
     publish = data.get("publish", False)
+    cover_image = data.get("cover_image", "")
+    source_url = data.get("source_url", "")
+    tags = data.get("tags", [])
     if not title:
         return jsonify({"error": "标题不能为空"}), 400
     if not images:
         return jsonify({"error": "至少需要一张图片"}), 400
     try:
-        result = manager.create_sticker_post(title, description, account_id, images, publish)
+        result = manager.create_sticker_post(title, description, account_id, images,
+                                             publish, cover_image, source_url, tags)
         return jsonify(result), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400

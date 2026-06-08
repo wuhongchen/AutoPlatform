@@ -15,6 +15,8 @@ class StickerTemplate(BaseTemplate):
     def render(self, title: str = "", content: str = "", author: str = "", **kwargs) -> str:
         images = kwargs.get("images", [])
         description = kwargs.get("description", "")
+        source_url = kwargs.get("source_url", "")
+        tags = kwargs.get("tags", [])
 
         image_html = ""
         for img in images:
@@ -25,6 +27,15 @@ class StickerTemplate(BaseTemplate):
         description_html = ""
         if description:
             description_html = f'<section class="sticker-desc"><p>{description}</p></section>'
+
+        tags_html = ""
+        if tags:
+            tag_spans = " ".join(f'<span class="sticker-tag">#{t}</span>' for t in tags)
+            tags_html = f'<section class="sticker-tags">{tag_spans}</section>'
+
+        source_html = ""
+        if source_url:
+            source_html = f'<section class="sticker-source"><a href="{source_url}">阅读原文</a></section>'
 
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -43,7 +54,7 @@ class StickerTemplate(BaseTemplate):
   .sticker-image{{margin:0;padding:0}}
   .sticker-image img{{display:block;width:100%;height:auto}}
   .sticker-image+.sticker-image{{margin-top:0}}
-  .sticker-footer{{padding:20px;text-align:center;font-size:12px;color:#bbb}}
+  .sticker-tags{{padding:12px 20px 4px;text-align:center}}.sticker-tag{{display:inline-block;margin:0 6px 8px;font-size:13px;color:#576b95;background:#f0f4ff;padding:2px 10px;border-radius:12px}}.sticker-source{{padding:4px 20px 20px;text-align:center}}.sticker-source a{{color:#576b95;font-size:14px;text-decoration:none}}.sticker-footer{{padding:20px;text-align:center;font-size:12px;color:#bbb}}
 </style>
 </head>
 <body>
@@ -54,6 +65,8 @@ class StickerTemplate(BaseTemplate):
     {f'<div class="author">{author}</div>' if author else ''}
   </header>
   {description_html}
+  {tags_html}
+  {source_html}
   <footer class="sticker-footer">Powered by AutoPlatform</footer>
 </div>
 </body>

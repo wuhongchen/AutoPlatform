@@ -13,6 +13,15 @@
               <el-input v-model="form.description" type="textarea" :rows="3"
                 placeholder="简短描述（最多 200 字）" maxlength="200" show-word-limit />
             </el-form-item>
+            <el-form-item label="原文链接">
+              <el-input v-model="form.source_url" placeholder="https://... '阅读原文'跳转" />
+            </el-form-item>
+            <el-form-item label="标签">
+              <el-select v-model="form.tags" multiple filterable allow-create
+                placeholder="输入标签，回车添加" style="width: 100%"
+                :default-first-option="true">
+              </el-select>
+            </el-form-item>
             <el-form-item label="账户">
               <el-select v-model="form.account_id" style="width: 100%">
                 <el-option v-for="acc in accountStore.accounts" :key="acc.account_id"
@@ -49,6 +58,21 @@
                 <el-button size="small" type="danger" circle :icon="'Close'"
                   @click.stop="removeImage(i)" />
               </div>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 封面选择 -->
+        <el-card v-if="images.length" shadow="never" class="cover-card">
+          <template #header><span>封面图片</span></template>
+          <div class="cover-grid">
+            <div v-for="(img, i) in images" :key="'cover-'+i" class="cover-item"
+              :class="{ selected: form.cover_index === i }"
+              @click="form.cover_index = i">
+              <img :src="img.preview" :alt="img.name" />
+              <span v-if="form.cover_index === i" class="cover-badge">
+                <el-icon><CircleCheck /></el-icon>
+              </span>
             </div>
           </div>
         </el-card>
@@ -102,14 +126,14 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Close, Document, Plus, Promotion } from '@element-plus/icons-vue'
+import { CircleCheck, Close, Document, Plus, Promotion } from '@element-plus/icons-vue'
 import { useAccountStore, useAppStore } from '../stores'
 import api from '../api'
 
 const accountStore = useAccountStore()
 const appStore = useAppStore()
 
-const form = reactive({ title: '', description: '', account_id: '' })
+const form = reactive({ title: '', description: '', account_id: '', source_url: '', tags: [], cover_index: 0 })
 const images = ref([])
 const publishing = ref(false)
 const saving = ref(false)
@@ -175,16 +199,9 @@ async function handlePublish() {
   try {
     const imageUrls = await uploadAllImages()
     if (!imageUrls.length) { ElMessage.error('没有成功上传的图片'); return }
-    const result = await api.stickers.create({
-      title: form.title,
-      description: form.description,
-      account_id: form.account_id || 'default',
-      images: imageUrls,
-      publish: true,
-    })
-    ElMessage.success(result.task_id
-      ? `发布任务已创建: ${result.task_id.slice(0, 8)}`
-      : '已保存并发布')
+    const stickerData = buildStickerData(imageUrls, true)
+    const result = await api.stickers.create(stickerData)
+    ElMessage.success('贴图已发布')
     resetForm()
   } catch (e) {
     ElMessage.error(e.message || '发布失败')
@@ -197,21 +214,31 @@ async function handleSaveDraft() {
   try {
     const imageUrls = await uploadAllImages()
     if (!imageUrls.length) { ElMessage.error('没有成功上传的图片'); return }
-    const result = await api.stickers.create({
-      title: form.title,
-      description: form.description,
-      account_id: form.account_id || 'default',
-      images: imageUrls,
-      publish: false,
-    })
+    const result = await api.stickers.create(buildStickerData(imageUrls, false))
     ElMessage.success('草稿已保存')
   } catch (e) {
     ElMessage.error(e.message || '保存失败')
   } finally { saving.value = false }
 }
 
+function buildStickerData(imageUrls, publish) {
+  // 封面：取选中图片的 URL，默认第一张
+  const coverIndex = form.cover_index ?? 0
+  const coverUrl = imageUrls[coverIndex] || imageUrls[0] || ''
+  return {
+    title: form.title,
+    description: form.description,
+    account_id: form.account_id || 'default',
+    images: imageUrls,
+    cover_image: coverUrl,
+    source_url: form.source_url || '',
+    tags: form.tags || [],
+    publish,
+  }
+}
+
 function resetForm() {
-  form.title = ''; form.description = ''
+  form.title = ''; form.description = ''; form.source_url = ''; form.tags = []; form.cover_index = 0
   images.value = []
 }
 
@@ -257,6 +284,21 @@ onMounted(async () => {
 .image-index {
   width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
   color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center;
+}
+
+/* 封面 */
+.cover-card { margin-top: 0; }
+.cover-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.cover-item {
+  width: 80px; height: 60px; border-radius: var(--radius-sm); overflow: hidden;
+  cursor: pointer; border: 2px solid transparent; position: relative; transition: border-color 0.2s;
+}
+.cover-item:hover { border-color: var(--accent); }
+.cover-item.selected { border-color: var(--accent); }
+.cover-item img { width: 100%; height: 100%; object-fit: cover; }
+.cover-badge {
+  position: absolute; top: 2px; right: 2px; color: var(--accent); background: #fff;
+  border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
 }
 
 /* 操作 */

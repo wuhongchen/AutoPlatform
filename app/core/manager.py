@@ -1543,7 +1543,9 @@ class AppManager:
         return {"total_collected": collected}
 
     def create_sticker_post(self, title: str, description: str, account_id: str,
-                           images: List[str], publish: bool = False) -> Dict:
+                           images: List[str], publish: bool = False,
+                           cover_image: str = "", source_url: str = "",
+                           tags: List[str] = None) -> Dict:
         """创建贴图"""
         import uuid
         from app.templates.sticker import StickerTemplate
@@ -1552,19 +1554,23 @@ class AppManager:
         tpl = StickerTemplate()
         account = self.storage.get_account(account_id)
         author = account.wechat_author if account else ""
-        html = tpl.render(title=title, description=description, author=author, images=images)
+        html = tpl.render(title=title, description=description, author=author,
+                         images=images, cover_image=cover_image,
+                         source_url=source_url, tags=tags or [])
 
         # 创建文章记录
         article = Article(
             id=f"sticker_{uuid.uuid4().hex[:12]}",
-            source_url="",
+            source_url=source_url or "",
             source_title=title,
             source_author=author,
             original_content=description,
             original_html=html,
             rewritten_html=html,
+            cover_image=cover_image,
             status=ArticleStatus.PUBLISHED if publish else ArticleStatus.PENDING,
             account_id=account_id,
+            metadata={"template": "sticker", "tags": tags or []},
         )
         self.storage.create_article(article)
 
