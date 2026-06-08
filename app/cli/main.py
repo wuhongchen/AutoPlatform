@@ -260,5 +260,23 @@ def wechat_ingest_sync(
     """将公众号文章同步到素材库"""
     _print_json(manager.wechat_ingest_sync_inspirations(account, mp_id=mp_id, limit=limit))
 
+@app.command()
+def repair(
+    dry_run: bool = typer.Option(False, "--dry-run", help="只检查不修复"),
+):
+    """修复历史数据：清理隐藏样式 + 补全任务账户绑定"""
+    console.print("[blue]开始数据修复...[/blue]")
+
+    console.print("[blue]1/2 修复隐藏样式...[/blue]")
+    manager._repair_collected_html()
+    console.print("[green]隐藏样式修复完成[/green]")
+
+    console.print("[blue]2/2 修复任务账户绑定...[/blue]")
+    manager._repair_task_account_bindings()
+    console.print("[green]任务账户绑定修复完成[/green]")
+
+    console.print("[green]所有修复已完成[/green]")
+
+
 if __name__ == "__main__":
     app()

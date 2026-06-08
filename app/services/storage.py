@@ -196,7 +196,8 @@ class StorageService:
                 )
             """)
             conn.execute("PRAGMA journal_mode=WAL;")
-            
+            conn.execute("PRAGMA foreign_keys = ON;")
+
             # 风格预设表
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS style_presets (
@@ -254,6 +255,44 @@ class StorageService:
 
             self._ensure_articles_schema(conn)
             self._ensure_accounts_schema(conn)
+
+            # 关键索引：加速高频查询（放在所有表创建之后）
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_articles_account_status
+                ON articles(account_id, status)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_articles_account_created
+                ON articles(account_id, created_at DESC)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_tasks_account_status
+                ON tasks(account_id, status)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_tasks_name_status
+                ON tasks(name, status)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_inspirations_account
+                ON inspiration_records(account_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_inspirations_account_created
+                ON inspiration_records(account_id, created_at DESC)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pipeline_account_status
+                ON pipeline_records(account_id, status)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_image_assets_account
+                ON image_assets(account_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_style_presets_active
+                ON style_presets(is_active, is_builtin DESC)
+            """)
 
     def _ensure_accounts_schema(self, conn: sqlite3.Connection):
         """向后兼容：为历史数据库补齐账户字段"""

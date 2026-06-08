@@ -1,106 +1,162 @@
 <template>
   <div class="wechat-radar-board">
-    <el-card shadow="never" class="radar-summary-card">
-      <div class="radar-summary-header">
-        <div>
-          <div class="radar-eyebrow">公众号雷达</div>
-          <h3>扫码登录、关注公众号、拉取文章并同步到素材库</h3>
-          <p>这条链路独立于 `AppID / Secret` 发布配置，适合登录公众号后台后采集关注号文章。</p>
+    <!-- 顶部概览 -->
+    <div class="radar-header">
+      <div class="radar-header-main">
+        <div class="radar-title-row">
+          <h2>公众号雷达</h2>
+          <el-tag v-if="isLoggedIn" type="success" effect="light">已登录</el-tag>
+          <el-tag v-else type="info" effect="light">未登录</el-tag>
         </div>
-        <div class="radar-actions">
-          <el-button @click="bootstrap" :loading="busy">
-            <el-icon><Refresh /></el-icon>刷新状态
-          </el-button>
-          <el-button type="primary" @click="openLoginFlow" :loading="busy" :disabled="!accountId">
-            扫码登录
-          </el-button>
+        <p class="radar-desc">登录公众号后台，检索并关注目标公众号，拉取文章缓存后同步到素材库。</p>
+      </div>
+      <div class="radar-header-actions">
+        <el-button @click="bootstrap" :loading="busy">
+          <el-icon><Refresh /></el-icon>刷新
+        </el-button>
+        <el-button type="primary" @click="openLoginFlow" :loading="busy" :disabled="!accountId">
+          扫码登录
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="stat-bar">
+      <div class="stat-item">
+        <el-icon class="stat-icon" :size="20"><UserFilled /></el-icon>
+        <div class="stat-body">
+          <span class="stat-label">当前账户</span>
+          <span class="stat-value">{{ accountName || accountId || '-' }}</span>
         </div>
       </div>
-
-      <div class="radar-stat-grid">
-        <div class="radar-stat-item">
-          <span>当前账户</span>
-          <strong>{{ accountName || accountId || '-' }}</strong>
-        </div>
-        <div class="radar-stat-item" :class="isLoggedIn ? 'ok' : 'warn'">
-          <span>登录状态</span>
-          <strong>{{ isLoggedIn ? '登录态有效' : '未登录' }}</strong>
-        </div>
-        <div class="radar-stat-item">
-          <span>已关注公众号</span>
-          <strong>{{ mpCount }}</strong>
-        </div>
-        <div class="radar-stat-item">
-          <span>文章缓存数</span>
-          <strong>{{ articleCount }}</strong>
+      <div class="stat-item" :class="isLoggedIn ? 'ok' : 'warn'">
+        <el-icon class="stat-icon" :size="20"><CircleCheck v-if="isLoggedIn" /><CircleClose v-else /></el-icon>
+        <div class="stat-body">
+          <span class="stat-label">登录状态</span>
+          <span class="stat-value">{{ isLoggedIn ? '有效' : '未登录' }}</span>
         </div>
       </div>
-
-      <div v-if="lastLoginAt" class="radar-tip">最近一次登录确认：{{ lastLoginAt }}，表示当前账户的公众号后台登录态可用于检索、关注和拉取。</div>
-      <div v-if="message" class="radar-message">{{ message }}</div>
-      <div v-if="errorMessage" class="radar-error">{{ errorMessage }}</div>
-      <div v-if="runtimeBlockers.length" class="runtime-diagnostics">
-        <div class="runtime-diagnostics-title">当前运行环境阻塞了扫码链路</div>
-        <div
-          v-for="blocker in runtimeBlockers"
-          :key="blocker.key"
-          class="runtime-diagnostics-item"
-        >
-          <strong>{{ blocker.label }}</strong>
-          <span>{{ blocker.message }}</span>
+      <div class="stat-item">
+        <el-icon class="stat-icon" :size="20"><Collection /></el-icon>
+        <div class="stat-body">
+          <span class="stat-label">已关注公众号</span>
+          <span class="stat-value">{{ mpCount }}</span>
         </div>
-        <div v-if="missingModules.length" class="runtime-diagnostics-hint">
-          缺少依赖：{{ missingModules.join(', ') }}
-        </div>
-        <div v-if="installHint" class="runtime-diagnostics-hint mono">建议安装：{{ installHint }}</div>
-        <div v-if="browserInstallHint" class="runtime-diagnostics-hint mono">浏览器运行时：{{ browserInstallHint }}</div>
       </div>
-    </el-card>
+      <div class="stat-item">
+        <el-icon class="stat-icon" :size="20"><Document /></el-icon>
+        <div class="stat-body">
+          <span class="stat-label">文章缓存</span>
+          <span class="stat-value">{{ articleCount }}</span>
+        </div>
+      </div>
+    </div>
 
-    <div class="radar-main-grid">
-      <el-card shadow="never">
-        <template #header>
-          <div class="panel-header">公众号检索与关注</div>
-        </template>
-        <div class="panel-body">
-          <div class="toolbar-row">
+    <!-- 消息提示 -->
+    <div v-if="message" class="banner-message">{{ message }}</div>
+    <div v-if="errorMessage" class="banner-error">{{ errorMessage }}</div>
+    <div v-if="runtimeBlockers.length" class="banner-error">
+      <strong>运行环境异常：</strong>{{ runtimeSummary }}
+      <div v-if="missingModules.length" class="mt-4">缺少依赖：{{ missingModules.join(', ') }}</div>
+    </div>
+
+    <!-- 主体内容区 -->
+    <div class="radar-body">
+      <!-- 左侧栏 -->
+      <div class="radar-sidebar">
+        <!-- 登录面板 -->
+        <el-card shadow="never" class="panel-card">
+          <template #header>
+            <div class="panel-title">
+              <el-icon><Lock /></el-icon>
+              <span>登录状态</span>
+            </div>
+          </template>
+          <div class="login-panel-body">
+            <div class="login-indicator" :class="isLoggedIn ? 'online' : 'offline'">
+              <span class="login-dot" />
+              <span class="login-text">{{ isLoggedIn ? '登录态有效' : '尚未登录' }}</span>
+            </div>
+            <div v-if="lastLoginAt" class="login-meta">最近确认：{{ lastLoginAt }}</div>
+            <div v-if="!isLoggedIn" class="login-hint">需先扫码登录公众号后台，才能检索和拉取文章。</div>
+            <el-button
+              v-if="!isLoggedIn"
+              type="primary"
+              style="width: 100%; margin-top: 12px"
+              @click="openLoginFlow"
+              :loading="busy"
+              :disabled="!accountId"
+            >
+              扫码登录
+            </el-button>
+            <el-button
+              v-else
+              style="width: 100%; margin-top: 12px"
+              @click="openLoginFlow"
+              :loading="busy"
+            >
+              重新登录
+            </el-button>
+          </div>
+        </el-card>
+
+        <!-- 公众号检索 -->
+        <el-card shadow="never" class="panel-card">
+          <template #header>
+            <div class="panel-title">
+              <el-icon><Search /></el-icon>
+              <span>检索公众号</span>
+            </div>
+          </template>
+          <div class="search-panel-body">
             <el-input
               v-model="keyword"
-              placeholder="输入公众号关键词，例如 机器之心"
+              placeholder="输入公众号关键词，如：机器之心"
               clearable
               @keyup.enter="searchMp"
             >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
+              <template #append>
+                <el-button @click="searchMp" :loading="busy" :disabled="!keyword.trim() || !accountId">
+                  <el-icon><Search /></el-icon>
+                </el-button>
               </template>
             </el-input>
-            <el-button type="primary" @click="searchMp" :loading="busy" :disabled="!keyword.trim() || !accountId">
-              检索
-            </el-button>
-          </div>
 
-          <div v-if="searchRows.length" class="list-stack">
-            <div v-for="(row, index) in searchRows" :key="`${row.fakeid || row.nickname}-${index}`" class="search-card">
-              <div class="search-card-main">
-                <div class="search-card-title">{{ row.nickname || row.alias || '未知公众号' }}</div>
-                <div class="search-card-subtitle">{{ row.signature || row.fakeid || '未返回签名' }}</div>
+            <div v-if="searchRows.length" class="search-results">
+              <div
+                v-for="(row, index) in searchRows"
+                :key="`${row.fakeid || row.nickname}-${index}`"
+                class="search-result-item"
+              >
+                <div class="search-result-info">
+                  <div class="search-result-name">{{ row.nickname || row.alias || '未知公众号' }}</div>
+                  <div class="search-result-desc">{{ row.signature || '未返回签名' }}</div>
+                </div>
+                <el-button size="small" type="primary" plain @click="addMpByPick(index + 1)" :loading="busy">
+                  关注
+                </el-button>
               </div>
-              <el-button size="small" @click="addMpByPick(index + 1)" :loading="busy">
-                关注 #{{ index + 1 }}
-              </el-button>
             </div>
+            <el-empty v-else description="输入关键词检索公众号" :image-size="60" />
           </div>
-          <el-empty v-else description="先检索公众号，再加入关注列表" />
-        </div>
-      </el-card>
+        </el-card>
 
-      <el-card shadow="never">
-        <template #header>
-          <div class="panel-header">已关注公众号</div>
-        </template>
-        <div class="panel-body">
-          <div class="toolbar-row">
-            <el-select v-model="selectedMpId" placeholder="选择已关注公众号" style="width: 100%">
+        <!-- 已关注公众号 -->
+        <el-card shadow="never" class="panel-card">
+          <template #header>
+            <div class="panel-title">
+              <el-icon><Collection /></el-icon>
+              <span>已关注公众号</span>
+              <el-tag size="small" type="info">{{ mpList.length }}</el-tag>
+            </div>
+          </template>
+          <div class="mp-panel-body">
+            <el-select
+              v-model="selectedMpId"
+              placeholder="选择公众号"
+              style="width: 100%"
+              v-if="mpList.length"
+            >
               <el-option
                 v-for="item in mpList"
                 :key="item.id"
@@ -108,145 +164,146 @@
                 :value="String(item.id || '')"
               />
             </el-select>
-            <el-button @click="reloadMpList" :loading="busy" :disabled="!accountId">
-              刷新
-            </el-button>
-          </div>
-
-          <div v-if="mpList.length" class="list-stack compact">
-            <div v-for="item in mpList" :key="item.id" class="info-card">
-              <div class="info-card-title">{{ item.name || item.id }}</div>
-              <div class="info-card-subtitle">ID: {{ item.id || '-' }}</div>
-            </div>
-          </div>
-          <el-empty v-else description="当前账户还没有关注公众号" />
-        </div>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="panel-header">拉取与同步</div>
-        </template>
-        <div class="panel-body">
-          <div class="settings-grid">
-            <div class="setting-item">
-              <span>拉取页数</span>
-              <el-input-number v-model="pages" :min="1" :max="10" />
-            </div>
-            <div class="setting-item">
-              <span>正文抓取上限</span>
-              <el-input-number v-model="contentLimit" :min="1" :max="200" />
-            </div>
-            <div class="setting-item">
-              <span>素材同步上限</span>
-              <el-input-number v-model="syncLimit" :min="1" :max="200" />
-            </div>
-          </div>
-
-          <div class="checkbox-row">
-            <el-checkbox v-model="withContent">拉取文章时同时抓取正文缓存</el-checkbox>
-          </div>
-
-          <div class="stack-actions">
-            <el-button @click="pullArticlesAction" :loading="busy" :disabled="!selectedMpId || !accountId">
-              拉取文章列表
-            </el-button>
-            <el-button type="primary" @click="syncInspirationAction" :loading="busy" :disabled="!accountId">
-              同步到素材库
-            </el-button>
-            <el-button type="success" @click="fullFlowAction" :loading="busy" :disabled="!accountId">
-              一键全流程
-            </el-button>
-          </div>
-        </div>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="panel-header">文章缓存预览</div>
-        </template>
-        <div class="panel-body">
-          <div v-if="articleRows.length" class="list-stack">
-            <div v-for="(item, index) in articleRows" :key="item.id || item.url || index" class="info-card article-card">
-              <div class="article-card-main">
-                <div class="info-card-title">{{ item.title || '未命名文章' }}</div>
-                <div class="info-card-subtitle">{{ item.publish_time_str || item.publish_time || '无时间信息' }}</div>
-              </div>
-              <div class="article-card-actions">
-                <el-button
-                  v-if="item.has_content"
-                  link
-                  type="primary"
-                  class="article-link-button"
-                  @click="openArticlePreview(item)"
-                >
-                  查看缓存
-                </el-button>
-                <el-button
-                  v-if="validHttpUrl(item.url)"
-                  link
-                  type="primary"
-                  class="article-link-button"
-                  @click="openOriginal(item.url)"
-                >
-                  打开原文
-                </el-button>
+            <div v-if="mpList.length" class="mp-list">
+              <div
+                v-for="item in mpList"
+                :key="item.id"
+                class="mp-list-item"
+                :class="{ active: selectedMpId === String(item.id || '') }"
+                @click="selectedMpId = String(item.id || '')"
+              >
+                <el-icon><ChatDotRound /></el-icon>
+                <span class="mp-name">{{ item.name || item.id }}</span>
               </div>
             </div>
+            <el-empty v-else description="还没有关注公众号" :image-size="60" />
           </div>
-          <el-empty v-else description="选择公众号后可以查看拉取到的文章缓存" />
-        </div>
-      </el-card>
+        </el-card>
+      </div>
+
+      <!-- 右侧主区域 -->
+      <div class="radar-main">
+        <!-- 操作工具栏 -->
+        <el-card shadow="never" class="toolbar-card">
+          <div class="toolbar-content">
+            <div class="toolbar-settings">
+              <div class="setting-field">
+                <label>拉取页数</label>
+                <el-input-number v-model="pages" :min="1" :max="10" size="small" />
+              </div>
+              <div class="setting-field">
+                <label>正文上限</label>
+                <el-input-number v-model="contentLimit" :min="1" :max="200" size="small" />
+              </div>
+              <div class="setting-field">
+                <label>同步上限</label>
+                <el-input-number v-model="syncLimit" :min="1" :max="200" size="small" />
+              </div>
+              <el-checkbox v-model="withContent">同时抓取正文</el-checkbox>
+            </div>
+            <div class="toolbar-actions">
+              <el-button @click="pullArticlesAction" :loading="busy" :disabled="!selectedMpId || !accountId">
+                拉取文章
+              </el-button>
+              <el-button type="primary" @click="syncInspirationAction" :loading="busy" :disabled="!accountId">
+                同步素材库
+              </el-button>
+              <el-button type="success" @click="fullFlowAction" :loading="busy" :disabled="!accountId">
+                一键全流程
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 文章列表 -->
+        <el-card shadow="never" class="articles-card">
+          <template #header>
+            <div class="panel-title">
+              <el-icon><Document /></el-icon>
+              <span>文章缓存</span>
+              <el-tag size="small" type="info" v-if="articleRows.length">{{ articleRows.length }} 条</el-tag>
+            </div>
+          </template>
+          <div class="articles-body">
+            <div v-if="articleRows.length" class="article-list">
+              <div
+                v-for="(item, index) in articleRows"
+                :key="item.id || item.url || index"
+                class="article-item"
+              >
+                <div class="article-main">
+                  <div class="article-title">{{ item.title || '未命名文章' }}</div>
+                  <div class="article-meta">
+                    <el-icon v-if="item.has_content" class="meta-icon" title="已有正文缓存"><DocumentChecked /></el-icon>
+                    <el-icon v-else class="meta-icon muted" title="暂无正文缓存"><Document /></el-icon>
+                    <span>{{ item.publish_time_str || item.publish_time || '无时间' }}</span>
+                  </div>
+                </div>
+                <div class="article-actions">
+                  <el-button
+                    v-if="item.has_content"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="openArticlePreview(item)"
+                  >
+                    查看缓存
+                  </el-button>
+                  <el-button
+                    v-if="validHttpUrl(item.url)"
+                    link
+                    type="info"
+                    size="small"
+                    @click="openOriginal(item.url)"
+                  >
+                    原文
+                  </el-button>
+                </div>
+              </div>
+            </div>
+            <el-empty v-else :description="selectedMpId ? '当前公众号暂无文章缓存' : '选择公众号后查看文章'" :image-size="80" />
+          </div>
+        </el-card>
+      </div>
     </div>
 
-    <el-dialog v-model="loginDialogVisible" title="扫码登录公众号后台" width="560px" destroy-on-close>
+    <!-- 登录弹窗 -->
+    <el-dialog v-model="loginDialogVisible" title="扫码登录公众号后台" width="520px" destroy-on-close>
       <div class="login-dialog-body">
-        <div class="qr-preview-box">
-          <div v-if="runtimeBlockers.length" class="qr-blocked-box">
-            <div class="qr-blocked-title">二维码无法生成</div>
-            <div class="qr-blocked-body">
-              当前登录态 runtime 未就绪，缺少依赖：{{ missingModules.join(', ') || 'unknown' }}
+        <div class="qr-box">
+          <div v-if="runtimeBlockers.length" class="qr-error">
+            <el-icon :size="32" color="#f56c6c"><Warning /></el-icon>
+            <div class="qr-error-title">二维码无法生成</div>
+            <div class="qr-error-text">
+              缺少依赖：{{ missingModules.join(', ') || 'unknown' }}
             </div>
-            <div v-if="installHint" class="qr-blocked-hint mono">{{ installHint }}</div>
-            <div v-if="browserInstallHint" class="qr-blocked-hint mono">{{ browserInstallHint }}</div>
           </div>
           <img
             v-else-if="qrImageUrl"
             :src="qrImageUrl"
             alt="微信扫码二维码"
-            class="qr-preview-image"
+            class="qr-image"
             @load="qrImageReady = true"
             @error="handleQrError"
           />
-          <el-empty v-else description="二维码准备中" />
+          <el-empty v-else description="二维码准备中" :image-size="80" />
         </div>
-        <div class="login-guide">
-          <div class="guide-row">
-            <span>步骤 1</span>
-            <strong>点击“扫码登录”后等待二维码生成</strong>
+        <div class="login-steps">
+          <div class="step">
+            <span class="step-num">1</span>
+            <span>等待二维码生成</span>
           </div>
-          <div class="guide-row">
-            <span>步骤 2</span>
-            <strong>使用微信扫码，并在手机端确认登录</strong>
+          <div class="step">
+            <span class="step-num">2</span>
+            <span>微信扫码并确认登录</span>
           </div>
-          <div class="guide-row">
-            <span>步骤 3</span>
-            <strong>点击“检查状态”确认当前账户已登录</strong>
-          </div>
-          <div class="guide-row">
-            <span>后台进程</span>
-            <strong>{{ loginJobId || '-' }}</strong>
-          </div>
-          <div class="guide-row">
-            <span>轮询状态</span>
-            <strong>{{ loginPolling ? '进行中' : '未轮询' }}</strong>
+          <div class="step">
+            <span class="step-num">3</span>
+            <span>点击"检查状态"确认</span>
           </div>
         </div>
-        <div v-if="runtimeBlockers.length" class="radar-error compact">
-          {{ runtimeSummary }}
-        </div>
-        <div v-else-if="qrImageError" class="radar-error compact">{{ qrImageError }}</div>
-        <div v-else-if="qrImageUrl && !qrImageReady" class="radar-tip compact">二维码文件已生成，等待浏览器完成加载。</div>
+        <div v-if="qrImageError" class="dialog-error">{{ qrImageError }}</div>
+        <div v-else-if="qrImageUrl && !qrImageReady" class="dialog-tip">二维码加载中...</div>
       </div>
       <template #footer>
         <el-button @click="refreshQrImage" :loading="busy">刷新二维码</el-button>
@@ -255,18 +312,19 @@
       </template>
     </el-dialog>
 
+    <!-- 文章预览弹窗 -->
     <el-dialog v-model="previewDialogVisible" title="正文缓存预览" width="860px" destroy-on-close>
-      <div class="article-preview-dialog">
-        <div class="article-preview-header">
+      <div class="preview-body">
+        <div class="preview-header">
           <h3>{{ previewArticle?.title || '未命名文章' }}</h3>
-          <div class="article-preview-meta">
+          <div class="preview-meta">
             <span>{{ previewArticle?.publish_time_str || previewArticle?.publish_time || '无时间信息' }}</span>
             <span v-if="previewArticle?.author">{{ previewArticle.author }}</span>
           </div>
         </div>
-        <div v-if="previewBusy" class="article-preview-loading">正在加载正文缓存...</div>
-        <el-empty v-else-if="!previewArticle?.content_html" description="当前文章还没有正文缓存，请勾选“拉取文章时同时抓取正文缓存”后重新拉取。" />
-        <div v-else class="article-preview-content" v-html="previewArticle.content_html"></div>
+        <div v-if="previewBusy" class="preview-loading">正在加载正文缓存...</div>
+        <el-empty v-else-if="!previewArticle?.content_html" description="当前文章还没有正文缓存" :image-size="80" />
+        <div v-else class="preview-content" v-html="previewArticle.content_html" />
       </div>
       <template #footer>
         <el-button v-if="validHttpUrl(previewArticle?.url)" @click="openOriginal(previewArticle.url)">打开原文</el-button>
@@ -279,7 +337,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import {
+  Refresh, Search, Lock, Collection, Document,
+  UserFilled, CircleCheck, CircleClose, ChatDotRound,
+  DocumentChecked, Warning
+} from '@element-plus/icons-vue'
 import api from '../api'
 
 const props = defineProps({
@@ -404,9 +466,14 @@ async function withBusy(fn) {
 
 async function reloadStatus() {
   if (!accountId.value) return
-  statusInfo.value = await api.wechatIngest.status(accountId.value)
-  if (statusInfo.value?.runtime?.login_status) {
-    markLoginConfirmed()
+  try {
+    const data = await api.wechatIngest.status(accountId.value)
+    statusInfo.value = data
+    if (data?.runtime?.login_status) {
+      markLoginConfirmed()
+    }
+  } catch {
+    statusInfo.value = null
   }
   updateQrPreviewFromStatus()
 }
@@ -421,10 +488,14 @@ function applyRuntimeFeedback() {
 
 async function reloadMpList() {
   if (!accountId.value) return
-  const data = await api.wechatIngest.listMps(accountId.value)
-  mpList.value = data.items || []
-  if (!selectedMpId.value && mpList.value.length) {
-    selectedMpId.value = String(mpList.value[0].id || '')
+  try {
+    const data = await api.wechatIngest.listMps(accountId.value)
+    mpList.value = data.items || []
+    if (!selectedMpId.value && mpList.value.length) {
+      selectedMpId.value = String(mpList.value[0].id || '')
+    }
+  } catch {
+    mpList.value = []
   }
 }
 
@@ -433,12 +504,16 @@ async function reloadArticles() {
     articleRows.value = []
     return
   }
-  const data = await api.wechatIngest.listArticles({
-    account_id: accountId.value,
-    mp_id: selectedMpId.value,
-    limit: 50
-  })
-  articleRows.value = data.items || []
+  try {
+    const data = await api.wechatIngest.listArticles({
+      account_id: accountId.value,
+      mp_id: selectedMpId.value,
+      limit: 50
+    })
+    articleRows.value = data.items || []
+  } catch {
+    articleRows.value = []
+  }
 }
 
 async function bootstrap() {
@@ -672,6 +747,9 @@ watch(accountId, () => {
   qrImageUrl.value = ''
   qrImageReady.value = false
   qrImageError.value = ''
+  statusInfo.value = null
+  message.value = ''
+  errorMessage.value = ''
   stopLoginPolling()
   readLoginMemory()
   bootstrap()
@@ -683,397 +761,672 @@ watch(selectedMpId, () => {
 </script>
 
 <style scoped>
+/* ========== 根容器 ========== */
 .wechat-radar-board {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
+  padding: 4px;
 }
 
-.radar-summary-card {
-  border-radius: 12px;
-}
-
-.radar-summary-header {
+/* ========== 顶部标题栏 ========== */
+.radar-header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
   align-items: flex-start;
-}
-
-.radar-eyebrow {
-  font-size: 12px;
-  color: #2563eb;
-  font-weight: 600;
-}
-
-.radar-summary-header h3 {
-  margin: 8px 0 6px;
-  font-size: 22px;
-  line-height: 1.4;
-  color: #0f172a;
-}
-
-.radar-summary-header p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: #64748b;
-  max-width: 620px;
-}
-
-.radar-actions {
-  display: flex;
-  gap: 10px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
-.radar-stat-grid {
-  margin-top: 18px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.radar-stat-item {
-  padding: 14px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.radar-stat-item.ok {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.radar-stat-item.warn {
-  background: #fff7ed;
-  border-color: #fed7aa;
-}
-
-.radar-stat-item span {
-  display: block;
-  font-size: 12px;
-  color: #64748b;
-}
-
-.radar-stat-item strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 18px;
-  color: #0f172a;
-  line-height: 1.4;
-}
-
-.radar-tip,
-.radar-message,
-.radar-error {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.radar-tip,
-.radar-message {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.radar-error {
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
-.radar-error.compact,
-.radar-tip.compact {
-  margin-top: 0;
-}
-
-.runtime-diagnostics {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
-  background: #fff7f7;
-  display: grid;
-  gap: 10px;
-}
-
-.runtime-diagnostics-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #991b1b;
-}
-
-.runtime-diagnostics-item {
-  display: grid;
-  gap: 4px;
-  font-size: 13px;
-}
-
-.runtime-diagnostics-item strong {
-  color: #7f1d1d;
-}
-
-.runtime-diagnostics-item span,
-.runtime-diagnostics-hint {
-  color: #b91c1c;
-  line-height: 1.6;
-}
-
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
-}
-
-.radar-main-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.panel-header {
-  font-size: 15px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.panel-body {
-  display: grid;
-  gap: 14px;
-}
-
-.toolbar-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.settings-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.setting-item {
-  display: grid;
-  gap: 8px;
-  font-size: 13px;
-  color: #475569;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-}
-
-.stack-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.list-stack {
-  display: grid;
-  gap: 10px;
-  max-height: 360px;
-  overflow: auto;
-  padding-right: 2px;
-}
-
-.list-stack.compact {
-  max-height: 300px;
-}
-
-.search-card,
-.info-card {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #fff;
-}
-
-.search-card-main,
-.article-card-main {
+.radar-header-main {
+  flex: 1;
   min-width: 0;
 }
 
-.search-card-title,
-.info-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-  line-height: 1.5;
-}
-
-.search-card-subtitle,
-.info-card-subtitle {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #64748b;
-  line-height: 1.6;
-  word-break: break-word;
-}
-
-.article-card-actions {
+.radar-title-row {
   display: flex;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.radar-title-row h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.3;
+}
+
+.radar-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.radar-header-actions {
+  display: flex;
   gap: 8px;
   flex-shrink: 0;
 }
 
-.article-link-button {
-  white-space: nowrap;
+/* ========== 统计栏 ========== */
+.stat-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 
-.article-preview-dialog {
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+}
+
+.stat-item.ok {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.stat-item.ok .stat-icon {
+  color: #16a34a;
+}
+
+.stat-item.warn {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.stat-item.warn .stat-icon {
+  color: #ea580c;
+}
+
+.stat-icon {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* ========== 消息横幅 ========== */
+.banner-message,
+.banner-error {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.banner-message {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.banner-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.mt-4 {
+  margin-top: 4px;
+}
+
+/* ========== 主体布局 ========== */
+.radar-body {
   display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ========== 左侧边栏 ========== */
+.radar-sidebar {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
-.article-preview-header h3 {
-  margin: 0 0 8px;
-  font-size: 28px;
-  line-height: 1.35;
+.panel-card {
+  border-radius: 10px;
 }
 
-.article-preview-meta {
+.panel-card :deep(.el-card__header) {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.panel-title {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.panel-title .el-tag {
+  margin-left: auto;
+}
+
+/* 登录面板 */
+.login-panel-body {
+  padding: 4px 0;
+}
+
+.login-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.login-indicator.online {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.login-indicator.offline {
+  background: #f8fafc;
   color: #64748b;
+}
+
+.login-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.login-indicator.online .login-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px #bbf7d0;
+}
+
+.login-indicator.offline .login-dot {
+  background: #94a3b8;
+}
+
+.login-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #64748b;
+  padding-left: 22px;
+}
+
+.login-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+/* 检索面板 */
+.search-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  transition: background 0.15s;
+}
+
+.search-result-item:hover {
+  background: #f8fafc;
+}
+
+.search-result-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.search-result-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.search-result-desc {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 公众号列表 */
+.mp-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.mp-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #475569;
+  transition: all 0.15s;
+}
+
+.mp-list-item:hover {
+  background: #f1f5f9;
+}
+
+.mp-list-item.active {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.mp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========== 右侧主区域 ========== */
+.radar-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* 工具栏卡片 */
+.toolbar-card :deep(.el-card__body) {
+  padding: 12px 16px;
+}
+
+.toolbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.toolbar-settings {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.setting-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-field label {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 文章列表卡片 */
+.articles-card {
+  flex: 1;
+  border-radius: 10px;
+}
+
+.articles-card :deep(.el-card__body) {
+  padding: 0;
+}
+
+.articles-body {
+  padding: 12px 16px 16px;
+}
+
+.article-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.article-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.article-item:hover {
+  background: #f8fafc;
+}
+
+.article-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.article-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.article-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.meta-icon {
+  font-size: 14px;
+  color: #16a34a;
+}
+
+.meta-icon.muted {
+  color: #cbd5e1;
+}
+
+.article-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ========== 登录弹窗 ========== */
+.login-dialog-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.qr-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 260px;
+  height: 260px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.qr-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 12px;
+}
+
+.qr-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+.qr-error-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.qr-error-text {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.login-steps {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+  color: #475569;
+  text-align: center;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.dialog-error {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
   font-size: 13px;
 }
 
-.article-preview-loading {
-  padding: 48px 0;
+.dialog-tip {
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* ========== 文章预览弹窗 ========== */
+.preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.preview-header h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  line-height: 1.4;
+  color: #1e293b;
+}
+
+.preview-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.preview-loading {
+  padding: 40px 0;
   text-align: center;
   color: #64748b;
 }
 
-.article-preview-content {
-  max-height: 70vh;
+.preview-content {
+  max-height: 60vh;
   overflow: auto;
   padding-right: 8px;
-  color: #1e293b;
   line-height: 1.8;
+  color: #334155;
 }
 
-.article-preview-content :deep(img) {
+.preview-content :deep(img) {
   display: block;
   max-width: 100%;
   height: auto;
   margin: 16px auto;
+  border-radius: 8px;
 }
 
-.article-preview-content :deep(p) {
+.preview-content :deep(p) {
   margin: 0 0 14px;
 }
 
-.article-preview-content :deep(blockquote) {
-  margin: 18px 0;
+.preview-content :deep(blockquote) {
+  margin: 16px 0;
   padding: 12px 16px;
   border-left: 4px solid #93c5fd;
   background: #f8fbff;
 }
 
-.login-dialog-body {
-  display: grid;
-  gap: 16px;
+.preview-content :deep(h2) {
+  font-size: 18px;
+  margin: 20px 0 12px;
 }
 
-.qr-preview-box {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 12px;
-  background: #f8fafc;
+.preview-content :deep(h3) {
+  font-size: 16px;
+  margin: 16px 0 10px;
 }
 
-.qr-blocked-box {
-  width: 100%;
-  padding: 20px 16px;
-  border-radius: 12px;
-  background: #fff7f7;
-  border: 1px solid #fecaca;
-  display: grid;
-  gap: 8px;
-  text-align: left;
-}
-
-.qr-blocked-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #991b1b;
-}
-
-.qr-blocked-body,
-.qr-blocked-hint {
-  font-size: 13px;
-  line-height: 1.7;
-  color: #b91c1c;
-  word-break: break-word;
-}
-
-.qr-preview-image {
-  width: 260px;
-  max-width: 100%;
-  height: auto;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.login-guide {
-  display: grid;
-  gap: 10px;
-}
-
-.guide-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.guide-row span {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.guide-row strong {
-  font-size: 13px;
-  color: #0f172a;
-  text-align: right;
-}
-
+/* ========== 响应式 ========== */
 @media (max-width: 1100px) {
-  .radar-main-grid,
-  .radar-stat-grid,
-  .settings-grid {
+  .stat-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .radar-body {
+    grid-template-columns: 280px 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .radar-body {
     grid-template-columns: 1fr;
   }
+
+  .radar-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-@media (max-width: 720px) {
-  .radar-summary-header,
-  .toolbar-row {
+@media (max-width: 640px) {
+  .radar-header {
+    flex-direction: column;
+  }
+
+  .stat-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .radar-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-content {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .search-card,
-  .info-card,
-  .guide-row {
+  .toolbar-settings {
+    justify-content: space-between;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-end;
+  }
+
+  .article-item {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .article-actions {
+    align-self: flex-end;
+  }
+
+  .login-steps {
+    flex-direction: column;
   }
 }
 </style>

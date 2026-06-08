@@ -137,6 +137,14 @@ class TaskExecutor:
                 "error_message": "",
             })
             logger.info(f"[executor] task completed: {task_id}")
+        except asyncio.CancelledError:
+            # 取消信号必须向上传播，不标记为失败
+            logger.info(f"[executor] task cancelled: {task_id}")
+            self._storage.update_task(task_id, {
+                "status": TaskStatus.CANCELLED,
+                "completed_at": datetime.now(),
+            })
+            raise
         except Exception as e:
             error_msg = str(e)
             tb = traceback.format_exc()

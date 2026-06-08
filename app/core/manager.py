@@ -43,8 +43,6 @@ class AppManager:
         self._init_builtin_presets()
         self._init_builtin_ai_configs()
         self._ensure_feed_sources_table()
-        self._repair_collected_html()
-        self._repair_task_account_bindings()
         self._init_executor()
     
     def _init_executor(self):
@@ -864,14 +862,16 @@ class AppManager:
         
         record_id = str(uuid.uuid4())
         
-        # 下载图片到本地
+        # 下载图片到本地（在线程池中执行，避免阻塞事件循环）
         images = result["images"]
         content_html = self.collector.sanitize_content_html(result["content_html"])
         if images:
+            import asyncio
             from app.config import get_settings
             settings = get_settings()
             image_dir = str(settings.data_dir / "images")
-            local_paths, url_map = self.collector.download_images(
+            local_paths, url_map = await asyncio.to_thread(
+                self.collector.download_images,
                 images, record_id, base_dir=image_dir
             )
             if url_map:

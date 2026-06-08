@@ -330,6 +330,9 @@ def client(monkeypatch, tmp_path):
     FakeAIService.calls = []
 
     test_manager = AppManager()
+    # 注入 mock manager 到所有 blueprints
+    monkeypatch.setattr("app.api.routes._manager_instance", test_manager)
+    # 同时替换 server.manager（测试中有直接访问 server.manager 的用例）
     monkeypatch.setattr(server, "manager", test_manager)
 
     # 重置任务执行器单例，确保每个测试有干净的线程池
