@@ -1482,21 +1482,65 @@ class AppManager:
 
     def list_tech_source_presets(self) -> List[Dict]:
         """列出预设科技信息源"""
-        from app.services.tech_sources import TECH_SOURCES
-        return [
-            {"name": s["name"], "url": s["url"], "category": s.get("category", ""), "description": s.get("description", "")}
-            for s in TECH_SOURCES
-        ]
+        from app.services.tech_sources import TechSourceHub
+        return TechSourceHub().list_presets()
 
-    def fetch_tech_source(self, name: str, account_id: str = "default") -> Dict:
-        """抓取单个科技信息源"""
-        from app.services.tech_sources import fetch_source
-        return fetch_source(name, account_id, self.storage)
+    def fetch_tech_source(self, source_type: str, config: dict, account_id: str = "default", limit: int = 20) -> Dict:
+        """抓取单个科技信息源并入库"""
+        import uuid
+        from app.services.tech_sources import TechSourceHub
+        hub = TechSourceHub()
+        articles = hub.fetch(source_type, **{**config, "limit": limit})
+        collected = 0
+        for a in articles:
+            url = a.url.strip()
+            if not url:
+                continue
+            if self.storage.find_inspiration_by_url(url):
+                continue
+            record = InspirationRecord(
+                id=f"ts_{uuid.uuid4().hex[:12]}",
+                source_url=url,
+                source_type=source_type,
+                source_account=a.source_name,
+                title=a.title,
+                author=a.author,
+                content=a.content_md or a.summary,
+                content_html=a.content_html,
+                status=InspirationStatus.COLLECTED,
+                account_id=account_id,
+            )
+            self.storage.create_inspiration(record)
+            collected += 1
+        return {"collected": collected, "total": len(articles)}
 
     def fetch_all_tech_sources(self, account_id: str = "default") -> Dict:
-        """抓取所有科技信息源"""
-        from app.services.tech_sources import fetch_all_sources
-        return fetch_all_sources(account_id, self.storage)
+        """一键采集所有预置科技信息源"""
+        from app.services.tech_sources import TechSourceHub
+        articles = TechSourceHub().collect_all_presets(limit_per_source=10)
+        import uuid
+        collected = 0
+        for a in articles:
+            url = a.url.strip()
+            if not url:
+                continue
+            if self.storage.find_inspiration_by_url(url):
+                continue
+            record = InspirationRecord(
+                id=f"ts_{uuid.uuid4().hex[:12]}",
+                source_url=url,
+                source_type=a.source_type,
+                source_account=a.source_name,
+                title=a.title,
+                author=a.author,
+                content=a.content_md or a.summary,
+                content_html=a.content_html,
+                status=InspirationStatus.COLLECTED,
+                account_id=account_id,
+            )
+            self.storage.create_inspiration(record)
+            collected += 1
+        return {"total_collected": collected}
 
     def create_sticker_post(self, title: str, description: str, account_id: str,
                            images: List[str], publish: bool = False) -> Dict:

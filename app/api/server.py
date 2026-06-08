@@ -828,7 +828,12 @@ def tech_source_presets():
 def tech_source_fetch():
     data = request.json or {}
     try:
-        result = manager.fetch_tech_source(data.get("name"), data.get("account_id", "default"))
+        result = manager.fetch_tech_source(
+            source_type=data.get("source_type", ""),
+            config=data.get("config", {}),
+            account_id=data.get("account_id", "default"),
+            limit=data.get("limit", 20),
+        )
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 400

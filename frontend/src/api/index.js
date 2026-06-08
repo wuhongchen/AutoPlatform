@@ -161,6 +161,13 @@ export default {
     test: (id) => api.post(`/ai-configs/${id}/test`)
   },
 
+  // 科技信息源
+  techSources: {
+    listPresets: () => api.get('/tech-sources/presets'),
+    fetch: (data) => api.post('/tech-sources/fetch', data),
+    fetchAll: (data) => api.post('/tech-sources/fetch-all', data),
+  },
+
   // 贴图
   stickers: {
     create: (data) => api.post('/stickers/create', data)
