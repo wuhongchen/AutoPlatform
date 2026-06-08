@@ -11,12 +11,15 @@
     </div>
 
     <el-card v-if="!hasCredentials" shadow="never" class="warning-card">
-      <el-icon><WarningFilled /></el-icon>
-      当前账户未配置微信凭证，无法从微信同步。请先在
-      <el-button type="primary" link @click="$router.push('/accounts')">账户管理</el-button>
-      或
-      <el-button type="primary" link @click="$router.push('/account-settings')">账号设置</el-button>
-      中配置 AppID 和 Secret。
+      <div class="warning-content">
+        <el-icon><WarningFilled /></el-icon>
+        <span>当前账户未配置微信凭证，无法从微信同步。请先在
+          <router-link to="/accounts" class="warning-link">账户管理</router-link>
+          或
+          <router-link to="/account-settings" class="warning-link">账号设置</router-link>
+          中配置 AppID 和 Secret。
+        </span>
+      </div>
     </el-card>
 
     <el-card shadow="never">
@@ -54,7 +57,7 @@
 
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openDetail(row)">查看详情</el-button>
+            <el-button size="small" type="primary" plain @click="openDetail(row)">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -174,10 +177,11 @@ watch(() => appStore.selectedAccountId, loadData)
 
 .warning-card {
   margin-bottom: 16px;
-  display: flex; align-items: center; gap: 10px;
-  color: var(--warning); background: var(--warning-light); border-color: #fde68a;
+  background: var(--warning-light); border-color: #fde68a;
 }
-.warning-card :deep(.el-card__body) { display: flex; align-items: center; gap: 8px; }
+.warning-card :deep(.el-card__body) { padding: 14px 20px; }
+.warning-content { display: flex; align-items: flex-start; gap: 10px; color: #92400e; font-size: 14px; line-height: 1.7; }
+.warning-link { color: #b45309; font-weight: 600; text-decoration: underline; margin: 0 2px; }
 
 .article-title { font-weight: 600; color: var(--text-primary); }
 .draft-id { font-size: 12px; color: var(--text-secondary); background: #f8fafc; padding: 2px 6px; border-radius: 4px; }
