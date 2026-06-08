@@ -1,3 +1,8 @@
+# 环境配置
+.env
+.env.local
+.env.*.local
+
 # Dependencies
 node_modules/
 .pnp
@@ -7,14 +12,17 @@ node_modules/
 dist/
 build/
 *.egg-info/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-
-# Environment files
-.env
-.env.local
-.env.*.local
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
 
 # IDE
 .idea/
@@ -27,15 +35,43 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Python
-.venv/
-venv/
-env/
-*.egg
+# 数据文件
+data/*.db
+data/*.db-*
+data/*.bak_*
+data/db/*.db
+data/db/*.db-*
+data/db/*.bak_*
+data/output/
+output/*.html
+output/*.md
+output/*.json
+!output/.gitkeep
 
-# Logs
+# 日志
 *.log
 logs/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.pid
+
+# 缓存
+.cache/
+*.stamp
+
+# 前端构建产物
+frontend/dist/
+app/static/dist/
+frontend/node_modules/
+
+# 工具二进制
+.tools/
+
+# 采集的图片数据
+data/images/
 
 # Test
 .coverage
@@ -44,5 +80,4 @@ htmlcov/
 .tox/
 
 # Misc
-*.tmp
 *.temp
