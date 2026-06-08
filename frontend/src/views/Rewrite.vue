@@ -91,9 +91,23 @@
               <el-button type="primary" @click="openPublishDialog">
                 <el-icon><Promotion /></el-icon>发布文章
               </el-button>
+              <el-button type="warning" @click="openImageDialog">
+                <el-icon><PictureFilled /></el-icon>生成配图
+              </el-button>
               <el-button @click="copyResult">
                 <el-icon><CopyDocument /></el-icon>复制内容
               </el-button>
+            </div>
+
+            <!-- 配图列表 -->
+            <div v-if="generatedImages.length" class="generated-images">
+              <div class="generated-title">已生成配图 ({{ generatedImages.length }})</div>
+              <div class="image-strip">
+                <div v-for="img in generatedImages" :key="img.id" class="image-thumb">
+                  <img :src="img.image_url" :alt="img.name" :title="img.name" />
+                  <span class="thumb-label">{{ img.name }}</span>
+                </div>
+              </div>
             </div>
           </template>
         </el-card>
@@ -206,6 +220,41 @@
       </el-col>
     </el-row>
 
+    <!-- 生成配图对话框 -->
+    <el-dialog v-model="imageDialogVisible" title="生成配图" width="600px">
+      <el-form :model="imageForm" label-width="80px">
+        <div class="image-templates">
+          <el-button v-for="tpl in IMAGE_TEMPLATES" :key="tpl.label" size="small"
+            @click="addSlideFromTemplate(tpl)" :type="tpl.type">
+            + {{ tpl.label }}
+          </el-button>
+        </div>
+        <div class="slide-list">
+          <el-card v-for="(slide, i) in imageForm.slides" :key="i" shadow="never" class="slide-card">
+            <div class="slide-header">
+              <span class="slide-label">配图 {{ i + 1 }}</span>
+              <el-input v-model="slide.name" placeholder="名称" size="small" style="width: 140px" />
+              <el-select v-model="slide.size" size="small" style="width: 130px">
+                <el-option label="1280x720 (横图)" value="1280x720" />
+                <el-option label="720x1280 (竖图)" value="720x1280" />
+              </el-select>
+              <el-button size="small" type="danger" plain @click="removeSlide(i)" circle :icon="'Delete'" />
+            </div>
+            <el-input v-model="slide.prompt" type="textarea" :rows="2" placeholder="描述要生成的图片..." />
+          </el-card>
+        </div>
+        <el-button @click="addSlide" style="margin-top: 8px">
+          <el-icon><Plus /></el-icon>添加一张
+        </el-button>
+      </el-form>
+      <template #footer>
+        <el-button @click="imageDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="doGenerateImages" :loading="generating" :disabled="!imageForm.slides.length">
+          开始生成 ({{ imageForm.slides.length }} 张)
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 发布对话框 -->
     <el-dialog v-model="publishDialogVisible" title="选择发布模板" width="500px">
       <div class="template-grid">
@@ -235,7 +284,7 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Promotion, CopyDocument, Search, Document, Refresh } from '@element-plus/icons-vue'
+import { MagicStick, Promotion, CopyDocument, Search, Document, Refresh, PictureFilled, Plus, Delete } from '@element-plus/icons-vue'
 import { useStyleStore, useInspirationStore, useArticleStore, useAppStore, useTaskStore } from '../stores'
 import api from '../api'
 
@@ -262,6 +311,57 @@ const selectedInspirations = ref([])
 const rewriting = ref(false)
 const result = ref(null)
 const activeTask = ref(null)
+
+// 配图生成
+const imageDialogVisible = ref(false)
+const generating = ref(false)
+const generatedImages = ref([])
+const imageForm = ref({ slides: [] })
+
+const IMAGE_TEMPLATES = [
+  { label: '封面图', prompt: '专业科技感封面图，蓝紫渐变背景，简洁现代设计，无文字', size: '1280x720', type: '' },
+  { label: '数据卡片', prompt: '数据可视化卡片，展示关键指标对比，清新配色，适合公众号配图', size: '1280x720', type: 'success' },
+  { label: '要点总结', prompt: '要点总结卡片，3-5条核心观点，清晰排版，简约风格', size: '720x1280', type: 'warning' },
+  { label: '引用卡片', prompt: '引用/金句卡片，优雅排版，大面积留白，突出文字', size: '720x1280', type: 'info' },
+  { label: '结语图', prompt: '文章结语/行动号召图，温暖色调，引导读者互动', size: '1280x720', type: 'danger' },
+]
+
+function addSlide() {
+  imageForm.value.slides.push({ name: '', prompt: '', size: '1280x720' })
+}
+function removeSlide(i) { imageForm.value.slides.splice(i, 1) }
+function addSlideFromTemplate(tpl) {
+  imageForm.value.slides.push({ name: tpl.label, prompt: tpl.prompt, size: tpl.size })
+}
+
+function openImageDialog() {
+  if (!imageForm.value.slides.length) {
+    addSlideFromTemplate(IMAGE_TEMPLATES[0])
+  }
+  imageDialogVisible.value = true
+}
+
+async function doGenerateImages() {
+  if (!articleId.value || !imageForm.value.slides.length) return
+  generating.value = true
+  try {
+    const data = await api.articles.generateImages(articleId.value, {
+      slides: imageForm.value.slides,
+      insert_into_article: true,
+    })
+    if (data.images?.length) {
+      generatedImages.value = [...generatedImages.value, ...data.images]
+      ElMessage.success(`生成 ${data.images.length} 张配图，已插入文章`)
+      // 刷新文章内容以显示插入的图片
+      await articleStore.getArticle(articleId.value)
+      result.value = articleStore.currentArticle
+    }
+    if (data.errors) ElMessage.warning(`${data.errors} 张失败`)
+    imageDialogVisible.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '生成失败')
+  } finally { generating.value = false }
+}
 const pollTimer = ref(null)
 
 const publishDialogVisible = ref(false)
@@ -615,4 +715,18 @@ watch(() => appStore.selectedAccountId, () => {
 .task-hint { text-align: center; color: var(--text-secondary); margin-top: 16px; font-size: 14px; }
 .task-failed { padding: 20px 0; }
 .task-link { text-align: center; margin-top: 12px; }
+
+.image-templates { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.slide-list { display: flex; flex-direction: column; gap: 10px; }
+.slide-card { border: 1px solid var(--border); border-radius: var(--radius); }
+.slide-card :deep(.el-card__body) { padding: 12px; }
+.slide-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.slide-label { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+
+.generated-images { margin-top: 20px; }
+.generated-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
+.image-strip { display: flex; gap: 10px; overflow-x: auto; }
+.image-thumb { flex-shrink: 0; width: 120px; text-align: center; }
+.image-thumb img { width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); }
+.thumb-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block; }
 </style>

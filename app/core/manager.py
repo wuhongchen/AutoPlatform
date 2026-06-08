@@ -1399,6 +1399,85 @@ class AppManager:
             synced += 1
         return {"synced": synced, "total": result.get("total", 0)}
 
+    def generate_article_images(self, article_id: str, slides: List[Dict], insert_into_article: bool = False) -> Dict:
+        """为文章批量生成配图"""
+        article = self.storage.get_article(article_id)
+        if not article:
+            raise Exception("文章不存在")
+
+        import uuid
+        results = []
+        errors = []
+
+        for i, slide in enumerate(slides):
+            name = slide.get("name", f"slide_{i+1:02d}")
+            prompt = slide.get("prompt", "")
+            size = slide.get("size", "1280x720")
+            if not prompt:
+                errors.append({"name": name, "error": "prompt 不能为空"})
+                continue
+            try:
+                gen_result = self.image.generate(prompt=prompt, size=size)
+                image_bytes = gen_result.get("bytes")
+                mime_type = gen_result.get("mime_type", "image/png")
+                ext = "png" if "png" in mime_type else "jpg"
+
+                asset_id = f"img_{uuid.uuid4().hex[:12]}"
+                image_path = self._save_image_asset(asset_id, image_bytes, ext)
+                image_url = f"/local_images/{asset_id}.{ext}"
+
+                asset = ImageAsset(
+                    id=asset_id,
+                    title=name,
+                    prompt=prompt,
+                    source_type="ai",
+                    image_url=image_url,
+                    file_path=image_path,
+                    mime_type=mime_type,
+                    account_id=article.account_id,
+                )
+                self.storage.create_image_asset(asset)
+                results.append({"name": name, "image_url": image_url, "id": asset_id})
+            except Exception as e:
+                errors.append({"name": name, "error": str(e)})
+
+        if insert_into_article and results:
+            html = article.rewritten_html or article.original_html or ""
+            for img_info in results:
+                img_tag = f'<figure><img src="{img_info["image_url"]}" alt="{img_info["name"]}"/><figcaption>{img_info["name"]}</figcaption></figure>'
+                html = self._insert_image_into_html(html, img_tag)
+            self.storage.update_article(article_id, {"rewritten_html": html})
+
+        return {
+            "generated": len(results),
+            "errors": len(errors),
+            "images": results,
+            "error_details": errors if errors else None,
+        }
+
+    def _save_image_asset(self, asset_id: str, image_bytes: bytes, ext: str) -> str:
+        """保存图片到本地"""
+        from pathlib import Path
+        settings = get_settings()
+        images_dir = settings.data_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        path = images_dir / f"{asset_id}.{ext}"
+        path.write_bytes(image_bytes)
+        return str(path)
+
+    def _insert_image_into_html(self, html: str, img_tag: str) -> str:
+        """将图片插入到 HTML 内容中（段落之间）"""
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        top_level = [el for el in soup.children if el.name]
+        if not top_level:
+            return html + img_tag
+        # 在中间位置插入
+        mid = max(1, len(top_level) // 2)
+        insert_point = top_level[mid]
+        insert_point.insert_before(BeautifulSoup(img_tag, "html.parser"))
+        return str(soup)
+
     def get_stats(self, account_id: Optional[str] = None) -> Dict:
         return self.storage.get_stats(account_id)
 

@@ -779,6 +779,21 @@ def sync_published_articles():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
+@app.route("/api/articles/<article_id>/generate-images", methods=["POST"])
+def generate_article_images(article_id):
+    """为文章批量生成配图"""
+    data = request.json or {}
+    slides = data.get("slides", [])
+    insert_into_article = data.get("insert_into_article", False)
+    if not slides:
+        return jsonify({"error": "slides 不能为空"}), 400
+    try:
+        result = manager.generate_article_images(article_id, slides, insert_into_article)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})
