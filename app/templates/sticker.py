@@ -48,12 +48,12 @@ class StickerTemplate(BaseTemplate):
 </head>
 <body>
 <div class="sticker-container">
+  {image_html}
   <header class="sticker-header">
     <h1>{title or '贴图'}</h1>
     {f'<div class="author">{author}</div>' if author else ''}
   </header>
   {description_html}
-  {image_html}
   <footer class="sticker-footer">Powered by AutoPlatform</footer>
 </div>
 </body>

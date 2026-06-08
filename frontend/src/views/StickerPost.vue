@@ -78,14 +78,16 @@
               <span>📶 🔋</span>
             </div>
             <div v-if="form.title" class="preview-article">
-              <h1 class="preview-title">{{ form.title }}</h1>
-              <p v-if="form.description" class="preview-desc">{{ form.description }}</p>
+              <!-- 图片在上 -->
               <div v-if="images.length" class="preview-images">
                 <img v-for="(img, i) in images" :key="i" :src="img.preview" :alt="img.name" />
               </div>
               <div v-if="!images.length" class="preview-empty">
                 <el-empty description="上传图片后可预览" :image-size="80" />
               </div>
+              <!-- 文字在图片下方 -->
+              <h1 class="preview-title">{{ form.title }}</h1>
+              <p v-if="form.description" class="preview-desc">{{ form.description }}</p>
             </div>
             <div v-else class="preview-empty">
               <el-empty description="输入标题和图片后预览" :image-size="80" />
