@@ -794,6 +794,56 @@ def generate_article_images(article_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
+# ============ 图片托管 ============
+
+@app.route("/api/image-hosting/upload", methods=["POST"])
+def image_hosting_upload():
+    from app.services.image_hosting import ImageHostingService
+    try:
+        result = ImageHostingService.upload(request)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/image-hosting/<path:filename>", methods=["GET"])
+def image_hosting_serve(filename):
+    from app.services.image_hosting import ImageHostingService
+    try:
+        return ImageHostingService.serve(filename)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
+
+# ============ 科技信息源 ============
+
+@app.route("/api/tech-sources/presets", methods=["GET"])
+def tech_source_presets():
+    presets = manager.list_tech_source_presets()
+    return jsonify(presets)
+
+
+@app.route("/api/tech-sources/fetch", methods=["POST"])
+def tech_source_fetch():
+    data = request.json or {}
+    try:
+        result = manager.fetch_tech_source(data.get("name"), data.get("account_id", "default"))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/tech-sources/fetch-all", methods=["POST"])
+def tech_source_fetch_all():
+    data = request.json or {}
+    try:
+        result = manager.fetch_all_tech_sources(data.get("account_id", "default"))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})

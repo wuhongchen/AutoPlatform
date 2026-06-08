@@ -34,6 +34,12 @@ const routes = [
             meta: { title: 'AI 改写', icon: 'MagicStick' }
           },
           {
+            path: '/markdown-editor',
+            name: 'MarkdownEditor',
+            component: () => import('../views/MarkdownEditor.vue'),
+            meta: { title: 'Markdown 编辑', icon: 'Edit' }
+          },
+          {
             path: '/articles',
             name: 'Articles',
             component: () => import('../views/Articles.vue'),
@@ -65,6 +71,12 @@ const routes = [
             name: 'Feeds',
             component: () => import('../views/Feeds.vue'),
             meta: { title: 'RSS 订阅', icon: 'Connection' }
+          },
+          {
+            path: '/tech-sources',
+            name: 'TechSources',
+            component: () => import('../views/TechSources.vue'),
+            meta: { title: '科技资讯', icon: 'Monitor' }
           },
           {
             path: '/inspirations',

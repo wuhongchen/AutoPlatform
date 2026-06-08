@@ -1478,6 +1478,26 @@ class AppManager:
         insert_point.insert_before(BeautifulSoup(img_tag, "html.parser"))
         return str(soup)
 
+    # ─── 科技信息源 ───────────────────────────────────────────
+
+    def list_tech_source_presets(self) -> List[Dict]:
+        """列出预设科技信息源"""
+        from app.services.tech_sources import TECH_SOURCES
+        return [
+            {"name": s["name"], "url": s["url"], "category": s.get("category", ""), "description": s.get("description", "")}
+            for s in TECH_SOURCES
+        ]
+
+    def fetch_tech_source(self, name: str, account_id: str = "default") -> Dict:
+        """抓取单个科技信息源"""
+        from app.services.tech_sources import fetch_source
+        return fetch_source(name, account_id, self.storage)
+
+    def fetch_all_tech_sources(self, account_id: str = "default") -> Dict:
+        """抓取所有科技信息源"""
+        from app.services.tech_sources import fetch_all_sources
+        return fetch_all_sources(account_id, self.storage)
+
     def get_stats(self, account_id: Optional[str] = None) -> Dict:
         return self.storage.get_stats(account_id)
 

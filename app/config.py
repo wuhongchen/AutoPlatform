@@ -11,7 +11,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
 
-load_dotenv(".env", override=False)
+# 使用绝对路径加载 .env，避免 cwd 不同导致找不到文件
+_PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(_PROJECT_ROOT / ".env", override=False)
 
 
 class DatabaseConfig(BaseSettings):
@@ -68,7 +70,7 @@ class PipelineConfig(BaseSettings):
 class AppConfig(BaseSettings):
     """应用主配置"""
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         env_nested_delimiter="__"
