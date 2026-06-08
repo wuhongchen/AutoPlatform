@@ -1512,7 +1512,44 @@ class AppManager:
             )
             self.storage.create_inspiration(record)
             collected += 1
-        return {"collected": collected, "total": len(articles)}
+        # 异步评分（最多 10 条）
+        import asyncio
+        try:
+            scored = asyncio.run(self._score_recent_inspirations(account_id, limit=10))
+        except Exception:
+            scored = 0
+        return {"collected": collected, "total": len(articles), "scored": scored}
+
+    def _score_inspiration(self, insp: InspirationRecord):
+        """对单条灵感进行 AI 评分"""
+        import asyncio
+        try:
+            result = asyncio.run(self.ai.score_article(insp.title, insp.content or insp.title))
+            self.storage.update_inspiration(insp.id, {
+                "ai_score": result.get("score", 0),
+                "ai_reason": result.get("reason", ""),
+                "ai_direction": result.get("direction", ""),
+            })
+        except Exception:
+            pass
+
+    async def _score_recent_inspirations(self, account_id: str, limit: int = 10):
+        """对最近未评分的灵感进行 AI 评分"""
+        scored = 0
+        inspirations = self.storage.list_inspirations(account_id=account_id, limit=limit * 3)
+        unrated = [i for i in inspirations if i.ai_score is None and (i.content or i.title)]
+        for insp in unrated[:limit]:
+            try:
+                result = await self.ai.score_article(insp.title, insp.content or insp.title)
+                self.storage.update_inspiration(insp.id, {
+                    "ai_score": result.get("score", 0),
+                    "ai_reason": result.get("reason", ""),
+                    "ai_direction": result.get("direction", ""),
+                })
+                scored += 1
+            except Exception:
+                pass
+        return scored
 
     def fetch_all_tech_sources(self, account_id: str = "default") -> Dict:
         """一键采集所有预置科技信息源"""

@@ -82,7 +82,8 @@ export default {
     collect: (data) => api.post('/inspirations', data),
     createArticle: (id) => api.post(`/inspirations/${id}/create-article`),
     get: (id) => api.get(`/inspirations/${id}`),
-    delete: (id) => api.delete(`/inspirations/${id}`)
+    delete: (id) => api.delete(`/inspirations/${id}`),
+    scoreUnrated: (data) => api.post('/inspirations/score-unrated', data),
   },
 
   // 图片素材库

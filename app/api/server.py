@@ -875,6 +875,19 @@ def create_sticker():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
+@app.route("/api/inspirations/score-unrated", methods=["POST"])
+def score_unrated_inspirations():
+    """对未评分的灵感进行 AI 评分"""
+    import asyncio
+    data = request.json or {}
+    account_id = data.get("account_id", "")
+    try:
+        scored = asyncio.run(manager._score_recent_inspirations(account_id or "", limit=20))
+        return jsonify({"scored": scored})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 # ============ Vue 前端静态文件服务 ============
 
 @app.route("/admin", defaults={"subpath": ""})

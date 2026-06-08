@@ -3,16 +3,28 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <el-input
-            v-model="searchQuery"
-            placeholder="搜索素材..."
-            :prefix-icon="Search"
-            style="width: 300px"
-            clearable
-          />
-          <el-button type="primary" @click="openCollectDialog">
-            <el-icon><Plus /></el-icon>采集素材
-          </el-button>
+          <div class="toolbar-left">
+            <el-input
+              v-model="searchQuery"
+              placeholder="搜索素材..."
+              :prefix-icon="Search"
+              style="width: 260px"
+              clearable
+            />
+            <el-select v-model="scoreFilter" placeholder="评分筛选" clearable style="width: 130px" size="default">
+              <el-option label="⭐ 高分 (80+)" :value="80" />
+              <el-option label="👍 中上 (60+)" :value="60" />
+              <el-option label="📋 未评分" value="unrated" />
+            </el-select>
+          </div>
+          <div class="toolbar-right">
+            <el-button @click="scoreUnrated" :loading="scoring" :disabled="!hasUnrated">
+              <el-icon><MagicStick /></el-icon>AI 评分
+            </el-button>
+            <el-button type="primary" @click="openCollectDialog">
+              <el-icon><Plus /></el-icon>采集素材
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -28,6 +40,14 @@
         </el-table-column>
 
         <el-table-column label="来源" width="120" prop="source_account" />
+        <el-table-column label="评分" width="90" sortable prop="ai_score">
+          <template #default="{ row }">
+            <span v-if="row.ai_score != null" :class="scoreClass(row.ai_score)" class="score-badge">
+              {{ row.ai_score }}
+            </span>
+            <span v-else class="score-none">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status === '已采集' ? 'success' : 'warning'">{{ row.status }}</el-tag>
@@ -97,7 +117,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { MagicStick, Plus, Search } from '@element-plus/icons-vue'
 import { useInspirationStore, useAccountStore, useAppStore } from '../stores'
 import api from '../api'
 
@@ -107,6 +127,8 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const searchQuery = ref('')
+const scoreFilter = ref(null)
+const scoring = ref(false)
 const showCollectDialog = ref(false)
 const showDetailDialog = ref(false)
 const selectedInspiration = ref(null)
@@ -116,12 +138,44 @@ const contentRef = ref(null)
 const collectForm = ref({ url: '', account_id: '' })
 
 const filteredInspirations = computed(() => {
-  if (!searchQuery.value) return inspirationStore.inspirations
-  const s = searchQuery.value.toLowerCase()
-  return inspirationStore.inspirations.filter(i =>
-    i.title?.toLowerCase().includes(s) || i.content?.toLowerCase().includes(s)
-  )
+  let list = inspirationStore.inspirations
+  // 搜索
+  if (searchQuery.value) {
+    const s = searchQuery.value.toLowerCase()
+    list = list.filter(i => i.title?.toLowerCase().includes(s) || i.content?.toLowerCase().includes(s))
+  }
+  // 评分筛选
+  if (scoreFilter.value === 'unrated') {
+    list = list.filter(i => i.ai_score == null)
+  } else if (scoreFilter.value) {
+    list = list.filter(i => i.ai_score != null && i.ai_score >= scoreFilter.value)
+  }
+  return list
 })
+
+const hasUnrated = computed(() =>
+  inspirationStore.inspirations.some(i => i.ai_score == null)
+)
+
+function scoreClass(score) {
+  if (score >= 80) return 'score-high'
+  if (score >= 60) return 'score-mid'
+  return 'score-low'
+}
+
+async function scoreUnrated() {
+  scoring.value = true
+  try {
+    // 调用后端评分 API
+    const data = await api.inspirations.scoreUnrated({
+      account_id: appStore.selectedAccountId || ''
+    })
+    ElMessage.success(`已评分 ${data.scored || 0} 条`)
+    loadData()
+  } catch (e) {
+    ElMessage.error(e.message || '评分失败')
+  } finally { scoring.value = false }
+}
 
 const displayContentHtml = computed(() => {
   if (!selectedInspiration.value) return ''
@@ -224,7 +278,16 @@ watch(() => appStore.selectedAccountId, loadData)
 </script>
 
 <style scoped>
-.card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
+
+.score-badge { font-weight: 700; font-size: 14px; padding: 2px 8px; border-radius: var(--radius-sm); }
+.score-high { color: #059669; background: #d1fae5; }
+.score-mid { color: #d97706; background: #fef3c7; }
+.score-low { color: #dc2626; background: #fee2e2; }
+.score-none { color: var(--text-muted); font-size: 14px; }
+
 .inspiration-title { font-weight: 600; color: var(--text-primary); }
 .inspiration-tags { margin-top: 6px; display: flex; gap: 6px; }
 
