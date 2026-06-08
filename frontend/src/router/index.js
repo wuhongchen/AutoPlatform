@@ -46,12 +46,6 @@ const routes = [
             meta: { title: 'Markdown 编辑', icon: 'Edit' }
           },
           {
-            path: '/articles',
-            name: 'Articles',
-            component: () => import('../views/Articles.vue'),
-            meta: { title: '我的文章', icon: 'Document' }
-          },
-          {
             path: '/published',
             name: 'Published',
             component: () => import('../views/Published.vue'),
